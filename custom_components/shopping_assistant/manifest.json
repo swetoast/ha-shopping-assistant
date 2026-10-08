@@ -1,10 +1,10 @@
 {
   "domain": "shopping_assistant",
   "name": "Shopping Assistant",
-  "after_dependencies": ["mobile_app", "shopping_list", "todo"],
+  "after_dependencies": ["frontend", "mobile_app", "shopping_list", "todo"],
   "codeowners": ["@swetoast"],
   "config_flow": true,
-  "dependencies": ["webhook"],
+  "dependencies": ["http", "webhook"],
   "documentation": "https://github.com/swetoast/ha-shopping-assistant",
   "integration_type": "service",
   "iot_class": "cloud_polling",

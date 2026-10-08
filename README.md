@@ -14,6 +14,7 @@ Shopping Assistant was called EAN Reader before version 2.0. See [Moving from EA
 - Adds the product to any to-do list in Home Assistant and notices when you tick it off.
 - Keeps a local product list you can edit. Products OpenFoodFacts does not know can be named by you, and you can send them to OpenFoodFacts if you like.
 - Optionally tracks prices and expiry dates.
+- Comes with a dashboard card for scanning, the list, product details and naming unknown barcodes.
 
 ## Requirements
 
@@ -65,6 +66,38 @@ action: shopping_assistant.add_last_missing_mapping
 data:
   name: "Store brand milk 1 l"
 ```
+
+## Dashboard card
+
+The card is part of the integration and loads by itself, so there is no resource to add. Add it from the card picker (search for Shopping Assistant) or with:
+
+```yaml
+type: custom:shopping-assistant-card
+```
+
+It has three tabs:
+
+- **List:** what to buy, with quantity buttons, Nutri-Score, NOVA and expiry badges, filters, sorting and an estimated total. Tick a product or swipe it left when it is in the basket; the notification lets you undo.
+- **To name:** barcodes OpenFoodFacts did not know, each with a field for its name.
+- **Expiring:** products expiring within a week, when expiry tracking is on.
+
+Type or scan a barcode at the top. If the product is unknown you can name it right there. Tap a product for scores, nutrition with low, medium and high levels, vitamins and minerals, ingredients and allergens, price history and expiry. From there you can also edit it and send your changes to OpenFoodFacts.
+
+The camera scanner needs a browser with barcode detection, such as Chrome and the Home Assistant app on Android. Elsewhere the scan button is hidden and you can type the barcode. In the scanner you can turn on the torch and keep scanning to add several products in a row.
+
+Options, all available in the visual editor:
+
+| Option | Default | |
+| --- | --- | --- |
+| `title` | `Shopping` | Card title. |
+| `entity` | found automatically | The shopping list sensor, if you have more than one. |
+| `scan_action` | `add` | `add` puts scanned products on the list, `lookup` only shows them. |
+| `show_scanner` | `true` | Camera scan button. |
+| `show_filters` | `true` | Filters, search and sorting. |
+| `show_totals` | `true` | Estimated total from recorded prices. |
+| `show_stats` | `true` | Scan statistics at the bottom. |
+
+If you added the card as a dashboard resource before, you can remove that resource.
 
 ## Shopping list
 
@@ -173,7 +206,8 @@ Shopping Assistant is a new integration, so Home Assistant sees it as separate f
 1. Install Shopping Assistant and add it. The setup form is filled in with your EAN Reader settings.
 2. Your products, unknown barcodes, prices and expiry dates are copied over on first start. The old data is left in place.
 3. A repair notice reminds you to delete the EAN Reader entry and the `custom_components/ean_reader` folder.
-4. Update automations and dashboards: entities, actions and events now start with `shopping_assistant` instead of `ean_reader`.
+4. Update automations: entities, actions and events now start with `shopping_assistant` instead of `ean_reader`.
+5. Replace `custom:ean-reader-card` with `custom:shopping-assistant-card` and remove the old card resource.
 
 If you used the webhook, enable it again in the options and give your scanners the new address.
 

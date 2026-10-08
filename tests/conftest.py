@@ -56,6 +56,18 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
 
 
 @pytest.fixture
+def frontend_urls(hass: HomeAssistant) -> Generator[set[str]]:
+    """Pretend the frontend is loaded and capture the extra module URLs."""
+    hass.config.components.add("frontend")
+    urls: set[str] = set()
+    with patch(
+        "custom_components.shopping_assistant.card.add_extra_js_url",
+        side_effect=lambda hass, url: urls.add(url),
+    ):
+        yield urls
+
+
+@pytest.fixture
 def off_lookup() -> Generator[AsyncMock]:
     """Fake OpenFoodFacts that only knows KNOWN_EAN."""
 

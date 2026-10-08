@@ -228,3 +228,23 @@ async def test_import_from_ean_reader(
     assert entry.runtime_data.db.get(KNOWN_EAN).product_name == "Old name"
     assert hass_storage[STORAGE_KEY]["data"]["products"][KNOWN_EAN]["product_name"] == "Old name"
     assert ir.async_get(hass).async_get_issue(DOMAIN, "legacy_integration")
+
+
+async def test_card_is_served_and_loaded(
+    hass: HomeAssistant,
+    frontend_urls: set[str],
+    shopping_list: None,
+    off_lookup: AsyncMock,
+    hass_client_no_auth,
+) -> None:
+    """The bundled card is served and added to the frontend with a version tag."""
+    entry = make_entry()
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert frontend_urls == {"/shopping_assistant/shopping-assistant-card.js?v=2.0.0"}
+    client = await hass_client_no_auth()
+    resp = await client.get("/shopping_assistant/shopping-assistant-card.js")
+    assert resp.status == HTTPStatus.OK
+    assert "shopping-assistant-card" in await resp.text()

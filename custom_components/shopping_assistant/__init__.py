@@ -18,6 +18,7 @@ from .const import (
     SHARE_EVENT,
 )
 from .ean import extract_ean
+from .card import async_register_card
 from .product_database import ProductDatabase
 from .runtime import Settings, ShoppingAssistant
 from .scanner_webhook import async_setup_webhook
@@ -31,8 +32,9 @@ type ShoppingAssistantConfigEntry = ConfigEntry[ShoppingAssistant]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the services once for the domain."""
+    """Register the services and the dashboard card once for the domain."""
     async_setup_services(hass)
+    await async_register_card(hass)
     return True
 
 

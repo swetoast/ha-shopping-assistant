@@ -44,6 +44,7 @@ The tests in `tests/` cover barcode parsing, OpenFoodFacts parsing, storage migr
 | `scanner_webhook.py` | Webhook handler |
 | `ean.py` | Barcode validation and normalization |
 | `config_flow.py` | Setup and options |
+| `card/` | Dashboard card (`shopping-assistant-card.js`, plain JavaScript, no build step) and the code that serves it |
 
 ## OpenFoodFacts rules
 

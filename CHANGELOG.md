@@ -14,6 +14,13 @@ Requires Home Assistant 2025.12.2 or newer.
 - On first start, products, unknown barcodes, prices, expiry dates and statistics are imported from EAN Reader, and the setup form is pre-filled with its options. A repair notice asks you to remove the old EAN Reader entry.
 - The User-Agent is now `HomeAssistant-ShoppingAssistant/<version> (email)`.
 
+### Dashboard card
+- The card is now part of the integration as `custom:shopping-assistant-card` and loads automatically; no dashboard resource needed.
+- New layout: scan or type at the top with inline naming of unknown barcodes, tabs for the list, barcodes to name and expiring products, and a product sheet with scores, nutrition levels, vitamins and minerals in mg or micrograms, ingredients, price history, expiry and editing.
+- Continuous scanning with torch, swipe to remove with undo, filters, search, sorting, estimated total and a visual editor.
+- Fixed: editing called a non-existent action, "Remove from list" deleted the product from the database, the card subscribed to every event on the bus, micronutrient units were wrong, the add button floated over the whole dashboard, and reordering was lost on the next update.
+- The shopping list sensor now also has `image_small_url` and `added_to_list_at` per product.
+
 ### Fixed
 - Options dialog crashed on current Home Assistant (the options flow assigned `config_entry`).
 - Saving options added another share listener and update listener each time, so scans were processed several times and two database copies overwrote each other.
