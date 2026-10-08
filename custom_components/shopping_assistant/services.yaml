@@ -1,0 +1,442 @@
+add_mapping:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    name:
+      required: true
+      example: "Oatly Oat Drink 1 l"
+      selector:
+        text:
+    add_to_shopping_list:
+      default: false
+      selector:
+        boolean:
+
+add_last_missing_mapping:
+  fields:
+    name:
+      required: true
+      example: "Store brand milk 1 l"
+      selector:
+        text:
+    add_to_shopping_list:
+      default: true
+      selector:
+        boolean:
+
+remove_mapping:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+
+lookup_product:
+  fields:
+    ean:
+      required: true
+      example: "3017624010701"
+      selector:
+        text:
+    force_refresh:
+      default: false
+      selector:
+        boolean:
+
+add_scanned_to_shopping_list:
+  fields:
+    ean:
+      required: true
+      example: "3017624010701"
+      selector:
+        text:
+    quantity:
+      example: "2"
+      selector:
+        text:
+
+list_unknowns:
+
+export_mappings:
+
+import_mappings:
+  fields:
+    data:
+      required: true
+      selector:
+        object:
+    merge:
+      default: true
+      selector:
+        boolean:
+
+add_price:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    price:
+      required: true
+      example: 25.90
+      selector:
+        number:
+          min: 0
+          max: 99999
+          step: 0.01
+          mode: box
+    currency:
+      example: "SEK"
+      selector:
+        text:
+    store:
+      example: "ICA"
+      selector:
+        text:
+
+set_expiry:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    expiry_date:
+      required: true
+      selector:
+        date:
+
+remove_from_shopping_list:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+
+update_shopping_list_quantity:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    quantity:
+      required: true
+      example: "2"
+      selector:
+        text:
+
+clear_shopping_list:
+
+get_shopping_list:
+
+update_product:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    name:
+      example: "Oatly Oat Drink 1 l"
+      selector:
+        text:
+    brands:
+      example: "Oatly"
+      selector:
+        text:
+    quantity:
+      example: "1 l"
+      selector:
+        text:
+    categories:
+      example: "Plant-based milks, Oat drinks"
+      selector:
+        text:
+    ingredients_text:
+      example: "Water, oats 10%, rapeseed oil, salt"
+      selector:
+        text:
+          multiline: true
+    allergens:
+      example: "Oats"
+      selector:
+        text:
+    traces:
+      example: "Nuts"
+      selector:
+        text:
+    labels:
+      example: "Organic, Vegan"
+      selector:
+        text:
+    stores:
+      example: "ICA, Coop"
+      selector:
+        text:
+    origins:
+      example: "Sweden"
+      selector:
+        text:
+    packaging:
+      example: "Carton"
+      selector:
+        text:
+    energy_kcal:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: "kcal"
+          mode: box
+    energy_kj:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: "kJ"
+          mode: box
+    fat:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    saturated_fat:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    carbohydrates:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    sugars:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    fiber:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    proteins:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    salt:
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          unit_of_measurement: "g"
+          mode: box
+    sodium:
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          unit_of_measurement: "g"
+          mode: box
+    notes:
+      example: "Buy the large pack"
+      selector:
+        text:
+          multiline: true
+    add_to_shopping_list:
+      default: false
+      selector:
+        boolean:
+    submit_to_openfoodfacts:
+      default: false
+      selector:
+        boolean:
+    username:
+      selector:
+        text:
+    password:
+      selector:
+        text:
+          type: password
+
+submit_to_openfoodfacts:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    name:
+      example: "Oatly Oat Drink 1 l"
+      selector:
+        text:
+    brands:
+      example: "Oatly"
+      selector:
+        text:
+    quantity:
+      example: "1 l"
+      selector:
+        text:
+    categories:
+      example: "Plant-based milks"
+      selector:
+        text:
+    ingredients_text:
+      selector:
+        text:
+          multiline: true
+    allergens:
+      selector:
+        text:
+    traces:
+      selector:
+        text:
+    labels:
+      example: "Organic, Vegan"
+      selector:
+        text:
+    stores:
+      selector:
+        text:
+    origins:
+      selector:
+        text:
+    packaging:
+      selector:
+        text:
+    energy_kcal:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: "kcal"
+          mode: box
+    energy_kj:
+      selector:
+        number:
+          min: 0
+          step: 1
+          unit_of_measurement: "kJ"
+          mode: box
+    fat:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    saturated_fat:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    carbohydrates:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    sugars:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    fiber:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    proteins:
+      selector:
+        number:
+          min: 0
+          step: 0.1
+          unit_of_measurement: "g"
+          mode: box
+    salt:
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          unit_of_measurement: "g"
+          mode: box
+    sodium:
+      selector:
+        number:
+          min: 0
+          step: 0.001
+          unit_of_measurement: "g"
+          mode: box
+    notes:
+      selector:
+        text:
+          multiline: true
+    username:
+      selector:
+        text:
+    password:
+      selector:
+        text:
+          type: password
+
+upload_image_to_openfoodfacts:
+  fields:
+    ean:
+      required: true
+      example: "7318690101234"
+      selector:
+        text:
+    image_path:
+      required: true
+      example: "/media/scans/7318690101234.jpg"
+      selector:
+        text:
+    image_field:
+      selector:
+        select:
+          options:
+            - "front"
+            - "ingredients"
+            - "nutrition"
+            - "packaging"
+          translation_key: image_field
+    language:
+      default: "en"
+      example: "sv"
+      selector:
+        text:
+    username:
+      selector:
+        text:
+    password:
+      selector:
+        text:
+          type: password

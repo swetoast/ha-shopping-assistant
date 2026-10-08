@@ -1,0 +1,511 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Shopping Assistant",
+        "description": "OpenFoodFacts asks every app to identify itself with a contact email. Settings from EAN Reader are filled in if it was set up before.",
+        "data": {
+          "contact_email": "Contact email",
+          "shopping_list_entity": "Shopping list",
+          "auto_add_to_shopping_list": "Add scanned products to the shopping list"
+        },
+        "data_description": {
+          "contact_email": "Sent to OpenFoodFacts in the User-Agent so they can reach you about your usage.",
+          "shopping_list_entity": "To-do list that scanned products are added to."
+        }
+      }
+    },
+    "error": {
+      "invalid_email": "Enter a real email address (example.com addresses are not accepted)."
+    },
+    "abort": {
+      "single_instance_allowed": "Shopping Assistant is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Shopping Assistant options",
+        "description": "Webhook URL: {webhook_url}",
+        "data": {
+          "contact_email": "Contact email",
+          "language_priority": "Name languages",
+          "shopping_list_entity": "Shopping list",
+          "auto_add_to_shopping_list": "Add scanned products to the shopping list",
+          "show_notifications": "Show notifications",
+          "track_prices": "Price tracking",
+          "track_expiry": "Expiry tracking",
+          "enable_webhook": "Webhook for barcode scanners",
+          "webhook_local_only": "Only accept webhook calls from the local network",
+          "enable_off_submission": "Allow submitting to OpenFoodFacts",
+          "off_username": "OpenFoodFacts username",
+          "off_password": "OpenFoodFacts password",
+          "off_test_mode": "Use the OpenFoodFacts test server"
+        },
+        "data_description": {
+          "contact_email": "Sent to OpenFoodFacts in the User-Agent so they can reach you about your usage.",
+          "language_priority": "Comma-separated two-letter codes, tried in order, for example sv, en.",
+          "shopping_list_entity": "To-do list that scanned products are added to.",
+          "enable_webhook": "Lets external scanners send barcodes over HTTP.",
+          "webhook_local_only": "Turn off to accept calls through Home Assistant Cloud or your external URL.",
+          "enable_off_submission": "Needed for the submit and image upload actions.",
+          "off_test_mode": "Sends contributions to openfoodfacts.net, where nothing reaches the real database."
+        }
+      }
+    },
+    "error": {
+      "invalid_email": "Enter a real email address (example.com addresses are not accepted).",
+      "invalid_language": "Use comma-separated two-letter language codes, for example sv, en.",
+      "credentials_required": "Submitting to OpenFoodFacts needs a username and password."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "statistics": {
+        "name": "Statistics"
+      },
+      "unknown_products": {
+        "name": "Unknown products"
+      },
+      "shopping_list": {
+        "name": "Shopping list"
+      },
+      "expiring_soon": {
+        "name": "Expiring soon"
+      }
+    },
+    "binary_sensor": {
+      "api_problem": {
+        "name": "API problem"
+      }
+    }
+  },
+  "issues": {
+    "legacy_integration": {
+      "title": "Remove the old EAN Reader integration",
+      "description": "Shopping Assistant replaces EAN Reader and has imported its products. Delete the EAN Reader entry under Settings > Devices & services, then remove the custom_components/ean_reader folder and restart Home Assistant."
+    }
+  },
+  "selector": {
+    "image_field": {
+      "options": {
+        "front": "Front",
+        "ingredients": "Ingredients",
+        "nutrition": "Nutrition facts",
+        "packaging": "Packaging"
+      }
+    }
+  },
+  "services": {
+    "add_mapping": {
+      "name": "Add mapping",
+      "description": "Name a barcode in the local database. Existing product details are kept.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Product name, as it should appear on the shopping list."
+        },
+        "add_to_shopping_list": {
+          "name": "Add to shopping list",
+          "description": "Also add the product to the shopping list."
+        }
+      }
+    },
+    "add_last_missing_mapping": {
+      "name": "Name last unknown barcode",
+      "description": "Name the most recently scanned barcode that OpenFoodFacts did not know.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Product name, as it should appear on the shopping list."
+        },
+        "add_to_shopping_list": {
+          "name": "Add to shopping list",
+          "description": "Also add the product to the shopping list."
+        }
+      }
+    },
+    "remove_mapping": {
+      "name": "Remove mapping",
+      "description": "Delete a barcode and its local data.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        }
+      }
+    },
+    "lookup_product": {
+      "name": "Look up product",
+      "description": "Resolve a barcode from the local database or OpenFoodFacts without counting a scan.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "force_refresh": {
+          "name": "Force refresh",
+          "description": "Fetch from OpenFoodFacts even if the product is stored locally. Overwrites local edits of OpenFoodFacts fields."
+        }
+      }
+    },
+    "add_scanned_to_shopping_list": {
+      "name": "Scan to shopping list",
+      "description": "Handle a barcode like a scan and add the product to the shopping list.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many to buy, for example 2 or 500 g."
+        }
+      }
+    },
+    "list_unknowns": {
+      "name": "List unknown barcodes",
+      "description": "Return all barcodes OpenFoodFacts did not know."
+    },
+    "export_mappings": {
+      "name": "Export products",
+      "description": "Return all stored products as a backup."
+    },
+    "import_mappings": {
+      "name": "Import products",
+      "description": "Import a backup created with Export products.",
+      "fields": {
+        "data": {
+          "name": "Data",
+          "description": "Data returned by shopping_assistant.export_mappings."
+        },
+        "merge": {
+          "name": "Merge",
+          "description": "Only add barcodes that are not stored yet. Turn off to replace all stored products."
+        }
+      }
+    },
+    "add_price": {
+      "name": "Add price",
+      "description": "Record a price for a product. Requires price tracking.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "price": {
+          "name": "Price",
+          "description": "Price paid."
+        },
+        "currency": {
+          "name": "Currency",
+          "description": "ISO 4217 code. Defaults to the Home Assistant currency."
+        },
+        "store": {
+          "name": "Store",
+          "description": "Where the price was seen."
+        }
+      }
+    },
+    "set_expiry": {
+      "name": "Set expiry date",
+      "description": "Set the expiry date of a product. Requires expiry tracking.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "expiry_date": {
+          "name": "Expiry date",
+          "description": "Best before or use by date."
+        }
+      }
+    },
+    "remove_from_shopping_list": {
+      "name": "Remove from shopping list",
+      "description": "Remove a product from the shopping list.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        }
+      }
+    },
+    "update_shopping_list_quantity": {
+      "name": "Set shopping list quantity",
+      "description": "Change how many of a listed product to buy.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many to buy, for example 2 or 500 g."
+        }
+      }
+    },
+    "clear_shopping_list": {
+      "name": "Clear shopping list",
+      "description": "Remove every product added by Shopping Assistant from the shopping list."
+    },
+    "get_shopping_list": {
+      "name": "Get shopping list",
+      "description": "Return the products on the shopping list with their details."
+    },
+    "update_product": {
+      "name": "Edit product",
+      "description": "Add or change product details. Only the given fields change.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Product name, as it should appear on the shopping list."
+        },
+        "brands": {
+          "name": "Brands",
+          "description": "Brand name(s)."
+        },
+        "quantity": {
+          "name": "Net quantity",
+          "description": "Net quantity, for example 1 l or 500 g."
+        },
+        "categories": {
+          "name": "Categories",
+          "description": "Comma-separated categories."
+        },
+        "ingredients_text": {
+          "name": "Ingredients",
+          "description": "Ingredient list as printed on the package."
+        },
+        "allergens": {
+          "name": "Allergens",
+          "description": "Allergens."
+        },
+        "traces": {
+          "name": "Traces",
+          "description": "May contain traces of."
+        },
+        "labels": {
+          "name": "Labels",
+          "description": "Comma-separated labels or certifications."
+        },
+        "stores": {
+          "name": "Stores",
+          "description": "Stores where the product is sold."
+        },
+        "origins": {
+          "name": "Origins",
+          "description": "Origin of the product or its ingredients."
+        },
+        "packaging": {
+          "name": "Packaging",
+          "description": "Packaging description."
+        },
+        "energy_kcal": {
+          "name": "Energy (kcal)",
+          "description": "Per 100 g or 100 ml."
+        },
+        "energy_kj": {
+          "name": "Energy (kJ)",
+          "description": "Per 100 g or 100 ml."
+        },
+        "fat": {
+          "name": "Fat",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "saturated_fat": {
+          "name": "Saturated fat",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "carbohydrates": {
+          "name": "Carbohydrates",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "sugars": {
+          "name": "Sugars",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "fiber": {
+          "name": "Fiber",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "proteins": {
+          "name": "Proteins",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "salt": {
+          "name": "Salt",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "sodium": {
+          "name": "Sodium",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "notes": {
+          "name": "Notes",
+          "description": "Private notes. Never sent to OpenFoodFacts."
+        },
+        "add_to_shopping_list": {
+          "name": "Add to shopping list",
+          "description": "Also add the product to the shopping list."
+        },
+        "submit_to_openfoodfacts": {
+          "name": "Submit to OpenFoodFacts",
+          "description": "Send the details you entered to OpenFoodFacts. Requires submission to be enabled in the options."
+        },
+        "username": {
+          "name": "OpenFoodFacts username",
+          "description": "Use this account instead of the one in the options."
+        },
+        "password": {
+          "name": "OpenFoodFacts password",
+          "description": "Password for the username above. Visible in automation traces, so prefer the options."
+        }
+      }
+    },
+    "submit_to_openfoodfacts": {
+      "name": "Submit to OpenFoodFacts",
+      "description": "Save any given details, then send everything you entered for the product to OpenFoodFacts.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Product name, as it should appear on the shopping list."
+        },
+        "brands": {
+          "name": "Brands",
+          "description": "Brand name(s)."
+        },
+        "quantity": {
+          "name": "Net quantity",
+          "description": "Net quantity, for example 1 l or 500 g."
+        },
+        "categories": {
+          "name": "Categories",
+          "description": "Comma-separated categories."
+        },
+        "ingredients_text": {
+          "name": "Ingredients",
+          "description": "Ingredient list as printed on the package."
+        },
+        "allergens": {
+          "name": "Allergens",
+          "description": "Allergens."
+        },
+        "traces": {
+          "name": "Traces",
+          "description": "May contain traces of."
+        },
+        "labels": {
+          "name": "Labels",
+          "description": "Comma-separated labels or certifications."
+        },
+        "stores": {
+          "name": "Stores",
+          "description": "Stores where the product is sold."
+        },
+        "origins": {
+          "name": "Origins",
+          "description": "Origin of the product or its ingredients."
+        },
+        "packaging": {
+          "name": "Packaging",
+          "description": "Packaging description."
+        },
+        "energy_kcal": {
+          "name": "Energy (kcal)",
+          "description": "Per 100 g or 100 ml."
+        },
+        "energy_kj": {
+          "name": "Energy (kJ)",
+          "description": "Per 100 g or 100 ml."
+        },
+        "fat": {
+          "name": "Fat",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "saturated_fat": {
+          "name": "Saturated fat",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "carbohydrates": {
+          "name": "Carbohydrates",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "sugars": {
+          "name": "Sugars",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "fiber": {
+          "name": "Fiber",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "proteins": {
+          "name": "Proteins",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "salt": {
+          "name": "Salt",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "sodium": {
+          "name": "Sodium",
+          "description": "Grams per 100 g or 100 ml."
+        },
+        "notes": {
+          "name": "Notes",
+          "description": "Private notes. Never sent to OpenFoodFacts."
+        },
+        "username": {
+          "name": "OpenFoodFacts username",
+          "description": "Use this account instead of the one in the options."
+        },
+        "password": {
+          "name": "OpenFoodFacts password",
+          "description": "Password for the username above. Visible in automation traces, so prefer the options."
+        }
+      }
+    },
+    "upload_image_to_openfoodfacts": {
+      "name": "Upload image to OpenFoodFacts",
+      "description": "Upload a product photo to OpenFoodFacts.",
+      "fields": {
+        "ean": {
+          "name": "Barcode",
+          "description": "EAN/UPC barcode (8 to 14 digits)."
+        },
+        "image_path": {
+          "name": "Image path",
+          "description": "Absolute path of the image on the Home Assistant host. Its folder must be in allowlist_external_dirs."
+        },
+        "image_field": {
+          "name": "Image type",
+          "description": "Select the uploaded image as this product image."
+        },
+        "language": {
+          "name": "Language",
+          "description": "Two-letter language code the image applies to."
+        },
+        "username": {
+          "name": "OpenFoodFacts username",
+          "description": "Use this account instead of the one in the options."
+        },
+        "password": {
+          "name": "OpenFoodFacts password",
+          "description": "Password for the username above. Visible in automation traces, so prefer the options."
+        }
+      }
+    }
+  }
+}

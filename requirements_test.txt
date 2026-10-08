@@ -1,0 +1,3 @@
+pytest-homeassistant-custom-component==0.13.300
+# aiodns 3.5.0 (pinned by Home Assistant 2025.12.2) does not import with pycares 5
+pycares==4.11.0

@@ -1,0 +1,15 @@
+{
+  "domain": "shopping_assistant",
+  "name": "Shopping Assistant",
+  "after_dependencies": ["mobile_app", "shopping_list", "todo"],
+  "codeowners": ["@swetoast"],
+  "config_flow": true,
+  "dependencies": ["webhook"],
+  "documentation": "https://github.com/swetoast/ha-shopping-assistant",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/swetoast/ha-shopping-assistant/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "2.0.0"
+}
