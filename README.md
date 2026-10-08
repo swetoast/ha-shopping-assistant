@@ -69,7 +69,9 @@ data:
 
 ## Dashboard card
 
-The card is part of the integration and loads by itself, so there is no resource to add. Add it from the card picker (search for Shopping Assistant) or with:
+The card comes with the integration. On every start Shopping Assistant copies it to `config/www/shopping-assistant/shopping-assistant-card.js` and adds it to all dashboards, so there is no resource to add. Home Assistant only serves the `www` folder if it existed when Home Assistant started, so on a system without one the card loads from the integration folder until the next restart.
+
+Add it from the card picker (search for Shopping Assistant) or with:
 
 ```yaml
 type: custom:shopping-assistant-card
@@ -96,8 +98,14 @@ Options, all available in the visual editor:
 | `show_filters` | `true` | Filters, search and sorting. |
 | `show_totals` | `true` | Estimated total from recorded prices. |
 | `show_stats` | `true` | Scan statistics at the bottom. |
+| `style` | `auto` | `home` uses the `--home-*` tokens of the Home cards: their font, type scale, panels and radii. `default` follows your Home Assistant theme. `auto` picks `home` when those tokens or Home cards are on the dashboard. |
+| `surface` | `auto` | `flat` drops the card background so the card sits on the page like the Home cards. `card` keeps it. `auto` is flat with the Home style. |
+| `icon` | `mdi:cart-outline` | Header icon. Empty for none, which is the default with the Home style. |
+| `accent` | theme colour | Any CSS colour for buttons, tabs and highlights. |
 
-If you added the card as a dashboard resource before, you can remove that resource.
+Both styles take their colours from your theme, so they work in light and dark mode. The Home style also reads `--home-accent`, `--home-panel`, `--home-press`, `--home-line`, `--home-radius` and `--home-radius-lg` when your theme sets them.
+
+The copy in `www` is overwritten whenever it differs from the card that comes with the integration, so changes made there do not last. If you added the card as a dashboard resource before, remove that resource.
 
 ## Shopping list
 

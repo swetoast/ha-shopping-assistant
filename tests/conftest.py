@@ -55,6 +55,13 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Load the integration from custom_components."""
 
 
+@pytest.fixture(autouse=True)
+def config_dir(hass: HomeAssistant, tmp_path) -> Any:
+    """Give every test its own config folder, so the card copy lands there."""
+    hass.config.config_dir = str(tmp_path)
+    return tmp_path
+
+
 @pytest.fixture
 def frontend_urls(hass: HomeAssistant) -> Generator[set[str]]:
     """Pretend the frontend is loaded and capture the extra module URLs."""

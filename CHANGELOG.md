@@ -15,7 +15,8 @@ Requires Home Assistant 2025.12.2 or newer.
 - The User-Agent is now `HomeAssistant-ShoppingAssistant/<version> (email)`.
 
 ### Dashboard card
-- The card is now part of the integration as `custom:shopping-assistant-card` and loads automatically; no dashboard resource needed.
+- The card is now part of the integration as `custom:shopping-assistant-card`. It is copied to `www/shopping-assistant/` on start and added to all dashboards, so no dashboard resource is needed.
+- Two styles: `home` matches the Home cards (their `--home-*` tokens, light type, flat surface, dot readouts and bar meters) and `default` follows the Home Assistant theme. `auto` picks one from the dashboard. New `surface`, `icon` and `accent` options.
 - New layout: scan or type at the top with inline naming of unknown barcodes, tabs for the list, barcodes to name and expiring products, and a product sheet with scores, nutrition levels, vitamins and minerals in mg or micrograms, ingredients, price history, expiry and editing.
 - Continuous scanning with torch, swipe to remove with undo, filters, search, sorting, estimated total and a visual editor.
 - Fixed: editing called a non-existent action, "Remove from list" deleted the product from the database, the card subscribed to every event on the bus, micronutrient units were wrong, the add button floated over the whole dashboard, and reordering was lost on the next update.
