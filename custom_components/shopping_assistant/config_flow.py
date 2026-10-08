@@ -16,8 +16,6 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
-    EntitySelector,
-    EntitySelectorConfig,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -32,7 +30,6 @@ from .const import (
     CONF_OFF_PASSWORD,
     CONF_OFF_TEST_MODE,
     CONF_OFF_USERNAME,
-    CONF_SHOPPING_LIST_ENTITY,
     CONF_SHOW_NOTIFICATIONS,
     CONF_TRACK_EXPIRY,
     CONF_TRACK_PRICES,
@@ -41,7 +38,6 @@ from .const import (
     DATA_WEBHOOK_ID,
     DEFAULT_OPTIONS,
     DOMAIN,
-    LEGACY_DOMAIN,
 )
 from .scanner_webhook import webhook_url
 
@@ -52,12 +48,10 @@ _TEXT = TextSelector()
 _EMAIL = TextSelector(TextSelectorConfig(type=TextSelectorType.EMAIL))
 _PASSWORD = TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD))
 _BOOL = BooleanSelector()
-_TODO = EntitySelector(EntitySelectorConfig(domain="todo"))
 
 USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_CONTACT_EMAIL): _EMAIL,
-        vol.Required(CONF_SHOPPING_LIST_ENTITY): _TODO,
         vol.Required(CONF_AUTO_ADD_TO_SHOPPING_LIST): _BOOL,
     }
 )
@@ -66,7 +60,6 @@ OPTIONS_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_CONTACT_EMAIL): _EMAIL,
         vol.Required(CONF_LANGUAGE_PRIORITY): _TEXT,
-        vol.Required(CONF_SHOPPING_LIST_ENTITY): _TODO,
         vol.Required(CONF_AUTO_ADD_TO_SHOPPING_LIST): _BOOL,
         vol.Required(CONF_SHOW_NOTIFICATIONS): _BOOL,
         vol.Required(CONF_TRACK_PRICES): _BOOL,
@@ -93,9 +86,9 @@ class ShoppingAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Ask for the contact email and shopping list."""
+        """Ask for the contact email."""
         errors: dict[str, str] = {}
-        defaults = {**DEFAULT_OPTIONS, **self._legacy_options()}
+        defaults = DEFAULT_OPTIONS
         if user_input is not None:
             email = user_input[CONF_CONTACT_EMAIL].strip()
             if _valid_email(email):
@@ -113,17 +106,6 @@ class ShoppingAssistantConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
-
-    def _legacy_options(self) -> dict[str, Any]:
-        """Return the options of an EAN Reader entry, if one exists."""
-        if not (legacy := self.hass.config_entries.async_entries(LEGACY_DOMAIN)):
-            return {}
-        options = {k: v for k, v in legacy[0].options.items() if k in DEFAULT_OPTIONS}
-        if isinstance(languages := options.get(CONF_LANGUAGE_PRIORITY), str):
-            options[CONF_LANGUAGE_PRIORITY] = [
-                part.strip().lower() for part in languages.split(",") if part.strip()
-            ]
-        return options
 
     @staticmethod
     @callback

@@ -1,134 +1,149 @@
-"""Keep the product database in sync with a Home Assistant to-do list."""
+"""The shopping list Shopping Assistant keeps itself.
+
+Each entry is a ListItem. A new field on ListItem is stored, shown in the
+shopping list sensor and returned by get_shopping_list without further
+changes. Add it to UPDATABLE_FIELDS to let update_shopping_list_item set it.
+"""
 from __future__ import annotations
 
-from collections.abc import Iterable
-import logging
-from typing import Any
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
-from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers.debounce import Debouncer
-from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.start import async_at_started
+from homeassistant.util import dt as dt_util
 
-from .product_database import ProductData, ProductDatabase
+from .storage import Record
 
-_LOGGER = logging.getLogger(__name__)
-
-TODO_DOMAIN = "todo"
-RECONCILE_COOLDOWN = 2.0
+if TYPE_CHECKING:
+    from .product_database import ProductData
 
 
-def _same(summary: Any, name: str) -> bool:
-    return str(summary or "").casefold() == name.casefold()
+def _utcnow() -> str:
+    return dt_util.utcnow().isoformat()
+
+
+@dataclass(slots=True)
+class ListItem(Record):
+    """One thing to buy: a scanned product or free text."""
+
+    name: str
+    ean: str | None = None
+    quantity: str | None = None
+    note: str | None = None
+    id: str = field(default_factory=lambda: uuid4().hex)
+    added_at: str = field(default_factory=_utcnow)
+
+
+# Fields update_shopping_list_item may change.
+UPDATABLE_FIELDS: tuple[str, ...] = ("name", "quantity", "note")
+
+# Product details shown with a listed product. The product's own net
+# quantity is renamed so it does not clash with how many to buy.
+PRODUCT_DETAILS: dict[str, str] = {
+    "brands": "brands",
+    "quantity": "net_quantity",
+    "image_url": "image_url",
+    "image_small_url": "image_small_url",
+    "nutrition_grades": "nutrition_grades",
+    "eco_score_grade": "eco_score_grade",
+    "nova_group": "nova_group",
+    "ingredients_analysis_vegan": "ingredients_analysis_vegan",
+    "ingredients_analysis_vegetarian": "ingredients_analysis_vegetarian",
+    "ingredients_analysis_palm_oil_free": "ingredients_analysis_palm_oil_free",
+    "current_price": "current_price",
+    "price_currency": "price_currency",
+    "expiry_date": "expiry_date",
+}
+
+
+def describe_item(item: ListItem, product: ProductData | None) -> dict[str, Any]:
+    """Return an item with the details of its product, for display."""
+    result = item.to_dict()
+    if product is not None:
+        if product.is_named:
+            result["name"] = product.product_name
+        for attr, key in PRODUCT_DETAILS.items():
+            if (value := getattr(product, attr)) is not None:
+                result[key] = value
+    return result
+
+
+def _bumped(quantity: str | None) -> str | None:
+    """Return a whole-number quantity plus one; other quantities stay as they are."""
+    if quantity is None:
+        return "2"
+    return str(int(quantity) + 1) if quantity.isdigit() else quantity
 
 
 class ShoppingList:
-    """Add products to a to-do entity and mirror its open items locally.
+    """Ordered list of items; calls on_change after every change."""
 
-    Items are matched by product name. When an item is completed or removed
-    in the to-do list, the product's in_shopping_list flag is cleared.
-    """
-
-    def __init__(self, hass: HomeAssistant, db: ProductDatabase, entity_id: str) -> None:
+    def __init__(self, on_change: Callable[[], None]) -> None:
         """Initialize."""
-        self._hass = hass
-        self._db = db
-        self.entity_id = entity_id
-        self._debouncer: Debouncer[Any] = Debouncer(
-            hass,
-            _LOGGER,
-            cooldown=RECONCILE_COOLDOWN,
-            immediate=False,
-            function=self.async_reconcile,
-        )
+        self._on_change = on_change
+        self.items: dict[str, ListItem] = {}
 
-    @property
-    def available(self) -> bool:
-        """Return True if the to-do entity exists and is available."""
-        state = self._hass.states.get(self.entity_id)
-        return state is not None and state.state != STATE_UNAVAILABLE
+    def load(self, raw: Iterable[dict[str, Any]]) -> None:
+        """Replace the items with stored ones."""
+        items = (ListItem.from_dict(data) for data in raw if data.get("name"))
+        self.items = {item.id: item for item in items}
 
-    async def _call(
-        self, service: str, data: dict[str, Any], *, response: bool = False
-    ) -> Any:
-        return await self._hass.services.async_call(
-            TODO_DOMAIN,
-            service,
-            data,
-            target={"entity_id": self.entity_id},
-            blocking=True,
-            return_response=response,
-        )
+    def dump(self) -> list[dict[str, Any]]:
+        """Return the items for storage."""
+        return [item.to_dict() for item in self.items.values()]
 
-    async def _open_items(self) -> list[dict[str, Any]]:
-        result = await self._call("get_items", {"status": ["needs_action"]}, response=True)
-        return list((result or {}).get(self.entity_id, {}).get("items", []))
+    def find(self, *, item_id: str | None = None, ean: str | None = None) -> ListItem | None:
+        """Return the item with this id, or the first one for this barcode."""
+        if item_id is not None:
+            return self.items.get(item_id)
+        return next((item for item in self.items.values() if item.ean == ean), None)
 
-    async def async_add(self, product: ProductData, quantity: str | None = None) -> None:
-        """Add a product unless an open item with the same name exists."""
-        if not self.available:
-            raise HomeAssistantError(
-                f"To-do list {self.entity_id} is not available; check the "
-                "shopping list entity in the Shopping Assistant options"
+    def add(
+        self,
+        name: str,
+        *,
+        ean: str | None = None,
+        quantity: str | None = None,
+        note: str | None = None,
+    ) -> ListItem:
+        """Add an item. Adding one that is listed already raises its count.
+
+        Products match by barcode and free text by name. An explicit quantity
+        replaces the listed one; without one a whole number goes up by one.
+        """
+        if ean is not None:
+            item = self.find(ean=ean)
+        else:
+            item = next(
+                (
+                    item
+                    for item in self.items.values()
+                    if item.ean is None and item.name.casefold() == name.casefold()
+                ),
+                None,
             )
-        items = await self._open_items()
-        if not any(_same(item.get("summary"), product.product_name) for item in items):
-            await self._call("add_item", {"item": product.product_name})
-        self._db.set_in_shopping_list(product.ean, quantity)
+        if item is None:
+            item = ListItem(name=name, ean=ean, quantity=quantity, note=note)
+            self.items[item.id] = item
+        else:
+            item.quantity = quantity if quantity is not None else _bumped(item.quantity)
+            if note is not None:
+                item.note = note
+        self._on_change()
+        return item
 
-    async def async_remove(self, eans: Iterable[str]) -> int:
-        """Remove products from the to-do list and clear their flags."""
-        listed = [p for ean in eans if (p := self._db.get(ean)) and p.in_shopping_list]
-        if listed and self.available:
-            items = await self._open_items()
-            uids = [
-                item["uid"]
-                for item in items
-                if item.get("uid")
-                and any(_same(item.get("summary"), p.product_name) for p in listed)
-            ]
-            if uids:
-                try:
-                    await self._call("remove_item", {"item": uids})
-                except HomeAssistantError as err:
-                    _LOGGER.warning("Could not remove items from %s: %s", self.entity_id, err)
-        return self._db.clear_shopping_list_flags(p.ean for p in listed)
+    def update(self, item: ListItem, values: dict[str, Any]) -> ListItem:
+        """Change fields of an item. An empty string clears an optional field."""
+        for key, value in values.items():
+            if key in UPDATABLE_FIELDS and (value or key != "name"):
+                setattr(item, key, value or None)
+        self._on_change()
+        return item
 
-    async def async_reconcile(self) -> None:
-        """Clear flags for products no longer open in the to-do list."""
-        listed = self._db.shopping_list()
-        if not listed or not self.available:
-            return
-        try:
-            items = await self._open_items()
-        except HomeAssistantError as err:
-            _LOGGER.debug("Cannot read %s: %s", self.entity_id, err)
-            return
-        self._db.clear_shopping_list_flags(
-            p.ean
-            for p in listed
-            if not any(_same(item.get("summary"), p.product_name) for item in items)
-        )
-
-    @callback
-    def async_start(self) -> CALLBACK_TYPE:
-        """Start following the to-do entity; returns a stop callback."""
-
-        @callback
-        def _schedule(_: Event | HomeAssistant) -> None:
-            self._debouncer.async_schedule_call()
-
-        unsub_state = async_track_state_change_event(
-            self._hass, [self.entity_id], _schedule
-        )
-        unsub_started = async_at_started(self._hass, _schedule)
-
-        @callback
-        def _stop() -> None:
-            unsub_state()
-            unsub_started()
-            self._debouncer.async_shutdown()
-
-        return _stop
+    def remove(self, items: Iterable[ListItem]) -> int:
+        """Remove items; returns how many were removed."""
+        count = sum(self.items.pop(item.id, None) is not None for item in items)
+        if count:
+            self._on_change()
+        return count

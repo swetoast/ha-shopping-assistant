@@ -1,7 +1,7 @@
 {
   "domain": "shopping_assistant",
   "name": "Shopping Assistant",
-  "after_dependencies": ["frontend", "mobile_app", "shopping_list", "todo"],
+  "after_dependencies": ["frontend", "mobile_app"],
   "codeowners": ["@swetoast"],
   "config_flow": true,
   "dependencies": ["http", "webhook"],
@@ -11,5 +11,5 @@
   "issue_tracker": "https://github.com/swetoast/ha-shopping-assistant/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "2.0.0"
+  "version": "1.0.0"
 }

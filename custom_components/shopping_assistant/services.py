@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 import re
 from typing import Any
 
@@ -16,17 +17,21 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.util import dt as dt_util
 
 from .api import IMAGE_FIELDS, clean_text
-from .const import DOMAIN, EVENT_IMPORT_COMPLETE, EVENT_MAPPING_ADDED, EVENT_MAPPING_REMOVED
+from .const import DOMAIN, EVENT_IMPORT_COMPLETE, EVENT_PRODUCT_SAVED, EVENT_PRODUCT_REMOVED
 from .ean import parse_ean
 from .product_database import EDITABLE_NUTRIENTS, ProductData
 from .runtime import ShoppingAssistant
+from .shopping import UPDATABLE_FIELDS, ListItem
 
 ATTR_EAN = "ean"
 ATTR_NAME = "name"
 ATTR_ADD_TO_LIST = "add_to_shopping_list"
 ATTR_QUANTITY = "quantity"
+ATTR_ITEM = "item"
+ATTR_NOTE = "note"
 ATTR_USERNAME = "username"
 ATTR_PASSWORD = "password"
 
@@ -85,6 +90,14 @@ CREDENTIALS_SCHEMA: dict[Any, Any] = {
 
 EMPTY_SCHEMA = vol.Schema({})
 
+RESET_SECTIONS = ("products", "unknowns", "shopping_list", "statistics")
+
+# Picks a list item by its id or by the barcode of its product.
+ITEM_SCHEMA: dict[Any, Any] = {
+    vol.Exclusive(ATTR_ITEM, "item"): cv.string,
+    vol.Exclusive(ATTR_EAN, "item"): EAN,
+}
+
 
 def _assistant(hass: HomeAssistant) -> ShoppingAssistant:
     if not (entries := hass.config_entries.async_loaded_entries(DOMAIN)):
@@ -113,48 +126,62 @@ def _editable_values(data: dict[str, Any]) -> dict[str, Any]:
 
 @callback
 def _save_details(assistant: ShoppingAssistant, ean: str, values: dict[str, Any]) -> ProductData:
-    """Apply edits, dismiss the missing notification and fire mapping_added."""
+    """Apply edits, dismiss the missing notification and fire product_saved."""
     product = assistant.db.update_fields(ean, values)
     if product.is_named:
         assistant.dismiss_missing(ean)
     assistant.hass.bus.async_fire(
-        EVENT_MAPPING_ADDED,
+        EVENT_PRODUCT_SAVED,
         {"ean": ean, "name": product.product_name, "source": product.source},
     )
     return product
 
 
-def _require_named(product: ProductData) -> ProductData:
+@callback
+def _list_product(assistant: ShoppingAssistant, product: ProductData) -> ListItem:
+    """Put a named product on the shopping list."""
     if not product.is_named:
         raise ServiceValidationError(f"{product.ean} has no product name yet")
-    return product
+    return assistant.shopping.add(product.product_name, ean=product.ean)
 
 
-async def _add_mapping(call: ServiceCall) -> None:
+def _item(assistant: ShoppingAssistant, data: dict[str, Any]) -> ListItem:
+    """Return the list item a service call points at."""
+    if ATTR_ITEM not in data and ATTR_EAN not in data:
+        raise ServiceValidationError("Give the item id or the barcode of a listed product")
+    item = assistant.shopping.find(item_id=data.get(ATTR_ITEM), ean=data.get(ATTR_EAN))
+    if item is None:
+        raise ServiceValidationError(
+            f"{data.get(ATTR_ITEM) or data.get(ATTR_EAN)} is not on the shopping list"
+        )
+    return item
+
+
+async def _name_product(call: ServiceCall) -> None:
     assistant = _assistant(call.hass)
     product = _save_details(
         assistant, call.data[ATTR_EAN], {"product_name": call.data[ATTR_NAME]}
     )
     if call.data[ATTR_ADD_TO_LIST]:
-        await assistant.shopping.async_add(product)
+        _list_product(assistant, product)
 
 
-async def _add_last_missing_mapping(call: ServiceCall) -> None:
+async def _name_last_unknown(call: ServiceCall) -> None:
     assistant = _assistant(call.hass)
     if not (ean := assistant.db.last_missing_ean):
         raise ServiceValidationError("No unknown barcode has been scanned")
     product = _save_details(assistant, ean, {"product_name": call.data[ATTR_NAME]})
     if call.data[ATTR_ADD_TO_LIST]:
-        await assistant.shopping.async_add(product)
+        _list_product(assistant, product)
 
 
-async def _remove_mapping(call: ServiceCall) -> None:
+async def _remove_product(call: ServiceCall) -> None:
     assistant = _assistant(call.hass)
     ean = call.data[ATTR_EAN]
     if not assistant.db.delete(ean):
         raise ServiceValidationError(f"{ean} is not in the Shopping Assistant database")
     assistant.dismiss_missing(ean)
-    call.hass.bus.async_fire(EVENT_MAPPING_REMOVED, {"ean": ean})
+    call.hass.bus.async_fire(EVENT_PRODUCT_REMOVED, {"ean": ean})
 
 
 async def _lookup_product(call: ServiceCall) -> ServiceResponse:
@@ -190,17 +217,26 @@ async def _list_unknowns(call: ServiceCall) -> ServiceResponse:
     }
 
 
-async def _export_mappings(call: ServiceCall) -> ServiceResponse:
+async def _export_data(call: ServiceCall) -> ServiceResponse:
     return _assistant(call.hass).db.export()
 
 
-async def _import_mappings(call: ServiceCall) -> ServiceResponse:
+async def _import_data(call: ServiceCall) -> ServiceResponse:
     try:
         count = _assistant(call.hass).db.import_data(call.data["data"], call.data["merge"])
     except ValueError as err:
         raise ServiceValidationError(str(err)) from err
     call.hass.bus.async_fire(EVENT_IMPORT_COMPLETE, {"imported_count": count})
     return {"imported_count": count}
+
+
+async def _reset_database(call: ServiceCall) -> ServiceResponse:
+    if not call.data["confirm"]:
+        raise ServiceValidationError("Set confirm to true to remove the data")
+    before = None
+    if days := call.data.get("older_than_days"):
+        before = dt_util.utcnow() - timedelta(days=days)
+    return _assistant(call.hass).db.reset(set(call.data["sections"]), before)
 
 
 async def _add_price(call: ServiceCall) -> None:
@@ -222,24 +258,37 @@ async def _set_expiry(call: ServiceCall) -> None:
     assistant.db.set_expiry(call.data[ATTR_EAN], call.data["expiry_date"])
 
 
-async def _remove_from_shopping_list(call: ServiceCall) -> None:
-    await _assistant(call.hass).shopping.async_remove([call.data[ATTR_EAN]])
-
-
-async def _update_shopping_list_quantity(call: ServiceCall) -> None:
-    ean = call.data[ATTR_EAN]
-    if not _assistant(call.hass).db.set_shopping_list_quantity(ean, call.data[ATTR_QUANTITY]):
-        raise ServiceValidationError(f"{ean} is not on the shopping list")
-
-
-async def _clear_shopping_list(call: ServiceCall) -> None:
+async def _add_to_shopping_list(call: ServiceCall) -> ServiceResponse:
     assistant = _assistant(call.hass)
-    await assistant.shopping.async_remove([p.ean for p in assistant.db.shopping_list()])
+    item = assistant.shopping.add(
+        call.data[ATTR_NAME],
+        quantity=call.data.get(ATTR_QUANTITY),
+        note=call.data.get(ATTR_NOTE),
+    )
+    return assistant.describe(item)
+
+
+async def _update_shopping_list_item(call: ServiceCall) -> ServiceResponse:
+    assistant = _assistant(call.hass)
+    item = _item(assistant, call.data)
+    values = {key: clean_text(call.data[key]) for key in UPDATABLE_FIELDS if key in call.data}
+    return assistant.describe(assistant.shopping.update(item, values))
+
+
+async def _remove_from_shopping_list(call: ServiceCall) -> None:
+    assistant = _assistant(call.hass)
+    assistant.shopping.remove([_item(assistant, call.data)])
+
+
+async def _clear_shopping_list(call: ServiceCall) -> ServiceResponse:
+    shopping = _assistant(call.hass).shopping
+    return {"removed": shopping.remove(list(shopping.items.values()))}
 
 
 async def _get_shopping_list(call: ServiceCall) -> ServiceResponse:
-    items = _assistant(call.hass).db.shopping_list()
-    return {"items": [p.to_dict() for p in items], "count": len(items)}
+    assistant = _assistant(call.hass)
+    items = [assistant.describe(item) for item in assistant.shopping.items.values()]
+    return {"items": items, "count": len(items)}
 
 
 async def _update_product(call: ServiceCall) -> ServiceResponse:
@@ -251,7 +300,7 @@ async def _update_product(call: ServiceCall) -> ServiceResponse:
         raise ServiceValidationError("Give at least one product detail to save")
     response: dict[str, Any] = {"product": product.to_dict()}
     if call.data[ATTR_ADD_TO_LIST]:
-        await assistant.shopping.async_add(_require_named(product))
+        _list_product(assistant, product)
     if call.data["submit_to_openfoodfacts"]:
         response["submission"] = await assistant.async_submit(
             ean,
@@ -287,8 +336,8 @@ async def _upload_image_to_openfoodfacts(call: ServiceCall) -> ServiceResponse:
 type _Handler = Callable[[ServiceCall], Awaitable[ServiceResponse | None]]
 
 SERVICES: dict[str, tuple[_Handler, vol.Schema, SupportsResponse]] = {
-    "add_mapping": (
-        _add_mapping,
+    "name_product": (
+        _name_product,
         vol.Schema(
             {
                 vol.Required(ATTR_EAN): EAN,
@@ -298,8 +347,8 @@ SERVICES: dict[str, tuple[_Handler, vol.Schema, SupportsResponse]] = {
         ),
         SupportsResponse.NONE,
     ),
-    "add_last_missing_mapping": (
-        _add_last_missing_mapping,
+    "name_last_unknown": (
+        _name_last_unknown,
         vol.Schema(
             {
                 vol.Required(ATTR_NAME): NAME,
@@ -308,8 +357,8 @@ SERVICES: dict[str, tuple[_Handler, vol.Schema, SupportsResponse]] = {
         ),
         SupportsResponse.NONE,
     ),
-    "remove_mapping": (
-        _remove_mapping,
+    "remove_product": (
+        _remove_product,
         vol.Schema({vol.Required(ATTR_EAN): EAN}),
         SupportsResponse.NONE,
     ),
@@ -334,13 +383,26 @@ SERVICES: dict[str, tuple[_Handler, vol.Schema, SupportsResponse]] = {
         SupportsResponse.OPTIONAL,
     ),
     "list_unknowns": (_list_unknowns, EMPTY_SCHEMA, SupportsResponse.ONLY),
-    "export_mappings": (_export_mappings, EMPTY_SCHEMA, SupportsResponse.ONLY),
-    "import_mappings": (
-        _import_mappings,
+    "export_data": (_export_data, EMPTY_SCHEMA, SupportsResponse.ONLY),
+    "import_data": (
+        _import_data,
         vol.Schema(
             {
                 vol.Required("data"): dict,
                 vol.Optional("merge", default=True): cv.boolean,
+            }
+        ),
+        SupportsResponse.OPTIONAL,
+    ),
+    "reset_database": (
+        _reset_database,
+        vol.Schema(
+            {
+                vol.Required("confirm"): cv.boolean,
+                vol.Optional("sections", default=list(RESET_SECTIONS)): vol.All(
+                    cv.ensure_list, [vol.In(RESET_SECTIONS)]
+                ),
+                vol.Optional("older_than_days"): vol.All(vol.Coerce(int), vol.Range(min=1)),
             }
         ),
         SupportsResponse.OPTIONAL,
@@ -367,22 +429,35 @@ SERVICES: dict[str, tuple[_Handler, vol.Schema, SupportsResponse]] = {
         ),
         SupportsResponse.NONE,
     ),
-    "remove_from_shopping_list": (
-        _remove_from_shopping_list,
-        vol.Schema({vol.Required(ATTR_EAN): EAN}),
-        SupportsResponse.NONE,
-    ),
-    "update_shopping_list_quantity": (
-        _update_shopping_list_quantity,
+    "add_to_shopping_list": (
+        _add_to_shopping_list,
         vol.Schema(
             {
-                vol.Required(ATTR_EAN): EAN,
-                vol.Required(ATTR_QUANTITY): cv.string,
+                vol.Required(ATTR_NAME): NAME,
+                vol.Optional(ATTR_QUANTITY): cv.string,
+                vol.Optional(ATTR_NOTE): cv.string,
             }
         ),
+        SupportsResponse.OPTIONAL,
+    ),
+    "update_shopping_list_item": (
+        _update_shopping_list_item,
+        vol.Schema(
+            {
+                **ITEM_SCHEMA,
+                vol.Optional(ATTR_NAME): cv.string,
+                vol.Optional(ATTR_QUANTITY): cv.string,
+                vol.Optional(ATTR_NOTE): cv.string,
+            }
+        ),
+        SupportsResponse.OPTIONAL,
+    ),
+    "remove_from_shopping_list": (
+        _remove_from_shopping_list,
+        vol.Schema(ITEM_SCHEMA),
         SupportsResponse.NONE,
     ),
-    "clear_shopping_list": (_clear_shopping_list, EMPTY_SCHEMA, SupportsResponse.NONE),
+    "clear_shopping_list": (_clear_shopping_list, EMPTY_SCHEMA, SupportsResponse.OPTIONAL),
     "get_shopping_list": (_get_shopping_list, EMPTY_SCHEMA, SupportsResponse.ONLY),
     "update_product": (
         _update_product,

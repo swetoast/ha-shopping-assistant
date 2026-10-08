@@ -5,21 +5,18 @@ Scan a barcode, get the product from [OpenFoodFacts](https://world.openfoodfacts
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
-Shopping Assistant was called EAN Reader before version 2.0. See [Moving from EAN Reader](#moving-from-ean-reader).
-
 ## What it does
 
 - Takes barcodes shared from your phone or sent by a hardware scanner.
 - Looks products up in OpenFoodFacts: name, brand, quantity, nutrition, Nutri-Score, Green-Score, NOVA group, allergens, and whether a product is vegan, vegetarian or palm oil free.
-- Adds the product to any to-do list in Home Assistant and notices when you tick it off.
-- Keeps a local product list you can edit. Products OpenFoodFacts does not know can be named by you, and you can send them to OpenFoodFacts if you like.
+- Keeps its own shopping list of scanned products and anything else you type in, with quantities and notes. No to-do list or other integration is needed.
+- Stores every product it has seen, so repeat scans need no lookup. You can name products OpenFoodFacts does not know, edit any product and send your additions to OpenFoodFacts.
 - Optionally tracks prices and expiry dates.
 - Comes with a dashboard card for scanning, the list, product details and naming unknown barcodes.
 
 ## Requirements
 
 - Home Assistant 2025.12.2 or newer.
-- A to-do list for shopping. The built-in Shopping List integration works and is the default.
 - A contact email address. OpenFoodFacts asks every app for one.
 
 Please also fill in the [OpenFoodFacts API usage form](https://docs.google.com/forms/d/e/1FAIpQLSdIE3D8qvjC_zRJw1W8OmuHhsWJ_NSckiiniAHlfaVwUZCziQ/viewform) and read their [terms of use](https://world.openfoodfacts.org/terms-of-use).
@@ -34,7 +31,7 @@ Then go to **Settings > Devices & services > Add integration** and choose **Shop
 
 ## Setup
 
-Setup asks for your contact email, the to-do list to use and whether scanned products should be added to it automatically.
+Setup asks for your contact email and whether scanned products should go on the shopping list automatically.
 
 Everything else is under **Configure** on the integration:
 
@@ -62,7 +59,7 @@ Only real barcodes count. A shared link, date or phone number is ignored. If the
 Products you have scanned before come from the local list. Everything else is looked up in OpenFoodFacts. A barcode OpenFoodFacts does not know is not looked up again for 24 hours, and you get a notification so you can name it:
 
 ```yaml
-action: shopping_assistant.add_last_missing_mapping
+action: shopping_assistant.name_last_unknown
 data:
   name: "Store brand milk 1 l"
 ```
@@ -83,7 +80,7 @@ It has three tabs:
 - **To name:** barcodes OpenFoodFacts did not know, each with a field for its name.
 - **Expiring:** products expiring within a week, when expiry tracking is on.
 
-Type or scan a barcode at the top. If the product is unknown you can name it right there. Tap a product for scores, nutrition with low, medium and high levels, vitamins and minerals, ingredients and allergens, price history and expiry. From there you can also edit it and send your changes to OpenFoodFacts.
+Type or scan a barcode at the top, or type anything else, like "bananas", to put it on the list as it is. If a barcode is unknown you can name it right there. Tap a product for scores, nutrition with low, medium and high levels, vitamins and minerals, ingredients and allergens, price history and expiry. From there you can also edit it and send your changes to OpenFoodFacts.
 
 The camera scanner needs a browser with barcode detection, such as Chrome and the Home Assistant app on Android. Elsewhere the scan button is hidden and you can type the barcode. In the scanner you can turn on the torch and keep scanning to add several products in a row.
 
@@ -109,13 +106,25 @@ The copy in `www` is overwritten whenever it differs from the card that comes wi
 
 ## Shopping list
 
-Products are added to the to-do list you chose, unless an open item with the same name is already there. When you tick an item off or delete it, Shopping Assistant notices and takes it off its own list too.
+Shopping Assistant keeps the list itself, stored with your products in `.storage/shopping_assistant`. It does not use the Shopping List integration or any to-do list.
+
+An item is either a scanned product or plain text. Adding something that is already listed raises its count by one, so scanning two cartons of milk gives you milk times two. Products are matched by barcode and plain text by name. Each item has an id, a name, and optionally a quantity, a note and the barcode of its product.
+
+```yaml
+action: shopping_assistant.add_to_shopping_list
+data:
+  name: Bananas
+  quantity: "6"
+  note: Ripe ones
+```
+
+Actions that change an item take its `item` id (from `get_shopping_list` or the sensor) or, for a product, its `ean`.
 
 ## Entities
 
 | Entity | State |
 | --- | --- |
-| `sensor.shopping_assistant_shopping_list` | Products on the list. The `products` attribute has the details of each one. |
+| `sensor.shopping_assistant_shopping_list` | Items on the list. The `items` attribute has each item with the details of its product. The product's own size is `net_quantity`, so `quantity` is always how many to buy. |
 | `sensor.shopping_assistant_statistics` | Total scans, with hit counts and the last scan as attributes. |
 | `sensor.shopping_assistant_unknown_products` | Barcodes OpenFoodFacts did not know. |
 | `sensor.shopping_assistant_expiring_soon` | Products expiring within 7 days. Only with expiry tracking. |
@@ -131,10 +140,10 @@ Barcodes can be typed with spaces or dashes. Actions marked with a response retu
 
 | Action | |
 | --- | --- |
-| `add_mapping` | Give a barcode a name. Other details are kept. |
-| `add_last_missing_mapping` | Name the last barcode OpenFoodFacts did not know. |
+| `name_product` | Give a barcode a name. Other details are kept. |
+| `name_last_unknown` | Name the last barcode OpenFoodFacts did not know. |
 | `update_product` | Add or change details, including nutrition. Response. |
-| `remove_mapping` | Delete a barcode and everything stored for it. |
+| `remove_product` | Delete a barcode and everything stored for it. |
 | `lookup_product` | Look a barcode up without counting a scan. Use `force_refresh: true` to fetch it from OpenFoodFacts again. Response. |
 | `list_unknowns` | Return the unknown barcodes. Response. |
 
@@ -143,9 +152,10 @@ Barcodes can be typed with spaces or dashes. Actions marked with a response retu
 | Action | |
 | --- | --- |
 | `add_scanned_to_shopping_list` | Handle a barcode like a scan and add it to the list, with an optional `quantity`. Response. |
-| `update_shopping_list_quantity` | Change how many to buy. |
-| `remove_from_shopping_list` | Take a product off the list. |
-| `clear_shopping_list` | Remove everything Shopping Assistant added. |
+| `add_to_shopping_list` | Add something without a barcode, with an optional `quantity` and `note`. Response. |
+| `update_shopping_list_item` | Change the name, quantity or note of an item. An empty value clears the quantity or note. Response. |
+| `remove_from_shopping_list` | Take an item off the list. |
+| `clear_shopping_list` | Empty the list. Response. |
 | `get_shopping_list` | Return the list with product details. Response. |
 
 **Prices, expiry and backups**
@@ -154,10 +164,11 @@ Barcodes can be typed with spaces or dashes. Actions marked with a response retu
 | --- | --- |
 | `add_price` | Record a price. The currency defaults to your Home Assistant currency. |
 | `set_expiry` | Set an expiry date. |
-| `export_mappings` | Return all products as a backup. Response. |
-| `import_mappings` | Restore a backup. `merge: false` replaces everything stored. Response. |
+| `export_data` | Return everything stored as a backup. Response. |
+| `import_data` | Restore a backup. By default only products that are not stored yet are added; `merge: false` replaces all products and the shopping list. Response. |
+| `reset_database` | Remove stored data. Response. See [Starting over](#starting-over). |
 
-All actions are in the `shopping_assistant` domain, for example `shopping_assistant.add_mapping`.
+All actions are in the `shopping_assistant` domain, for example `shopping_assistant.name_product`.
 
 ## Events
 
@@ -166,8 +177,8 @@ All actions are in the `shopping_assistant` domain, for example `shopping_assist
 | `shopping_assistant_product_scanned` | A barcode is scanned. Data: `ean`, `name`, `source`, `origin`. |
 | `shopping_assistant_missing_product` | OpenFoodFacts does not know a barcode. Data: `ean`, `seen_count`. |
 | `shopping_assistant_lookup_completed` | An OpenFoodFacts lookup finished. Data: `ean`, `found`, `name`. |
-| `shopping_assistant_mapping_added` | A product is named or edited. |
-| `shopping_assistant_mapping_removed` | A product is deleted. |
+| `shopping_assistant_product_saved` | A product is named or edited. |
+| `shopping_assistant_product_removed` | A product is deleted. |
 | `shopping_assistant_import_complete` | A backup was imported. |
 | `shopping_assistant_off_submitted` | A contribution to OpenFoodFacts finished. Data includes `ok`. |
 
@@ -207,29 +218,33 @@ Only what you entered yourself is sent, in your first name language. Notes stay 
 
 The actions also accept `username` and `password`, but those show up in automation traces, so keeping the account in the options is safer.
 
-## Moving from EAN Reader
-
-Shopping Assistant is a new integration, so Home Assistant sees it as separate from EAN Reader.
-
-1. Install Shopping Assistant and add it. The setup form is filled in with your EAN Reader settings.
-2. Your products, unknown barcodes, prices and expiry dates are copied over on first start. The old data is left in place.
-3. A repair notice reminds you to delete the EAN Reader entry and the `custom_components/ean_reader` folder.
-4. Update automations: entities, actions and events now start with `shopping_assistant` instead of `ean_reader`.
-5. Replace `custom:ean-reader-card` with `custom:shopping-assistant-card` and remove the old card resource.
-
-If you used the webhook, enable it again in the options and give your scanners the new address.
-
 ## Troubleshooting
 
 - **Nothing happens when sharing:** share the barcode as text. Enable debug logging for `custom_components.shopping_assistant` to see what arrived.
-- **Products are not added to the list:** check the shopping list entity in the options and that adding scanned products is on.
+- **Scanned products are not added to the list:** check that adding scanned products is on in the options. Barcodes OpenFoodFacts does not know are added once you name them.
 - **API problem sensor is on:** the `last_error` attribute says why. It turns off after the next successful lookup.
 
 ## Data, privacy and limits
 
-Everything is stored in Home Assistant (`.storage/shopping_assistant`) and included in your backups. OpenFoodFacts receives the barcode and your contact email, plus the details you submit if you contribute. Diagnostics hide your email, account and webhook address.
+Everything is stored in one file, `.storage/shopping_assistant`, which is part of your Home Assistant backups. OpenFoodFacts receives the barcode and your contact email, plus the details you submit if you contribute. Diagnostics hide your email, account and webhook address.
 
 OpenFoodFacts allows 15 lookups per minute per address. Shopping Assistant stays at 12 and makes extra scans wait instead of failing.
+
+### Starting over
+
+`reset_database` removes stored data. `confirm: true` is required. Without other fields it removes products, unknown barcodes, the shopping list and statistics.
+
+Clear out products and unknown barcodes that have not been scanned for a year, keeping everything on the shopping list:
+
+```yaml
+action: shopping_assistant.reset_database
+data:
+  confirm: true
+  sections: [products, unknowns]
+  older_than_days: 365
+```
+
+`sections` can be any of `products`, `unknowns`, `shopping_list` and `statistics`. With `older_than_days`, statistics are left alone. Products removed this way are looked up in OpenFoodFacts again the next time they are scanned.
 
 ## License
 

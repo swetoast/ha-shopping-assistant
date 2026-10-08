@@ -1,7 +1,7 @@
 """Shared fixtures for Shopping Assistant tests."""
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -89,23 +89,6 @@ def off_lookup() -> Generator[AsyncMock]:
         yield mock
 
 
-@pytest.fixture
-async def shopping_list(hass: HomeAssistant) -> AsyncGenerator[None]:
-    """Set up the built-in shopping list (todo.shopping_list) without file I/O."""
-    with (
-        patch(
-            "homeassistant.components.shopping_list.load_json_array",
-            return_value=[],
-        ),
-        patch("homeassistant.components.shopping_list.ShoppingData.save"),
-    ):
-        entry = MockConfigEntry(domain="shopping_list")
-        entry.add_to_hass(hass)
-        assert await hass.config_entries.async_setup(entry.entry_id)
-        await hass.async_block_till_done()
-        yield
-
-
 def make_entry(**options: Any) -> MockConfigEntry:
     """Return an Shopping Assistant config entry with the given option overrides."""
     return MockConfigEntry(
@@ -124,7 +107,7 @@ def make_entry(**options: Any) -> MockConfigEntry:
 
 @pytest.fixture
 async def loaded_entry(
-    hass: HomeAssistant, shopping_list: None, off_lookup: AsyncMock
+    hass: HomeAssistant, off_lookup: AsyncMock
 ) -> MockConfigEntry:
     """Set up Shopping Assistant with default options."""
     entry = make_entry()

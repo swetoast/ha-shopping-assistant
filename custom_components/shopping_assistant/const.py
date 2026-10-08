@@ -5,15 +5,12 @@ from typing import Any, Final
 
 DOMAIN: Final = "shopping_assistant"
 
-# Earlier name of this integration. Its data and options are imported once.
-LEGACY_DOMAIN: Final = "ean_reader"
-LEGACY_STORAGE_KEY: Final = "ean_reader_mappings"
 APP_NAME: Final = "HomeAssistant-ShoppingAssistant"
 
 # Storage
 STORAGE_KEY: Final = "shopping_assistant"
-STORAGE_VERSION: Final = 3
-STORAGE_MINOR_VERSION: Final = 2
+STORAGE_VERSION: Final = 1
+STORAGE_MINOR_VERSION: Final = 1
 SAVE_DELAY: Final = 10
 
 # Dispatcher signal used to refresh entities after any data change
@@ -35,8 +32,8 @@ UNKNOWN_PRODUCT_NAME: Final = "Unknown Product"
 EVENT_PRODUCT_SCANNED: Final = "shopping_assistant_product_scanned"
 EVENT_LOOKUP_COMPLETED: Final = "shopping_assistant_lookup_completed"
 EVENT_MISSING_PRODUCT: Final = "shopping_assistant_missing_product"
-EVENT_MAPPING_ADDED: Final = "shopping_assistant_mapping_added"
-EVENT_MAPPING_REMOVED: Final = "shopping_assistant_mapping_removed"
+EVENT_PRODUCT_SAVED: Final = "shopping_assistant_product_saved"
+EVENT_PRODUCT_REMOVED: Final = "shopping_assistant_product_removed"
 EVENT_IMPORT_COMPLETE: Final = "shopping_assistant_import_complete"
 EVENT_OFF_SUBMITTED: Final = "shopping_assistant_off_submitted"
 
@@ -48,7 +45,6 @@ DATA_APP_UUID: Final = "app_uuid"
 CONF_CONTACT_EMAIL: Final = "contact_email"
 CONF_LANGUAGE_PRIORITY: Final = "language_priority"
 CONF_AUTO_ADD_TO_SHOPPING_LIST: Final = "auto_add_to_shopping_list"
-CONF_SHOPPING_LIST_ENTITY: Final = "shopping_list_entity"
 CONF_SHOW_NOTIFICATIONS: Final = "show_notifications"
 CONF_TRACK_PRICES: Final = "track_prices"
 CONF_TRACK_EXPIRY: Final = "track_expiry"
@@ -65,7 +61,6 @@ DEFAULT_OPTIONS: Final[dict[str, Any]] = {
     CONF_CONTACT_EMAIL: "",
     CONF_LANGUAGE_PRIORITY: list(DEFAULT_LANGUAGE_PRIORITY),
     CONF_AUTO_ADD_TO_SHOPPING_LIST: True,
-    CONF_SHOPPING_LIST_ENTITY: "todo.shopping_list",
     CONF_SHOW_NOTIFICATIONS: True,
     CONF_TRACK_PRICES: False,
     CONF_TRACK_EXPIRY: False,

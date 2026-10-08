@@ -3,7 +3,7 @@
  * https://github.com/swetoast/ha-shopping-assistant
  */
 
-const CARD_VERSION = "4.0.0";
+const CARD_VERSION = "1.0.0";
 const DOMAIN = "shopping_assistant";
 const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/product/";
 
@@ -35,6 +35,8 @@ function gtinValid(code) {
 }
 
 const cleanEan = (value) => String(value || "").replace(/\D/g, "").slice(0, 14);
+/* Digits with optional spaces or dashes are a barcode; anything else is an item name. */
+const isBarcodeText = (value) => /^[\d\s-]+$/.test(value);
 
 const SCORE_COLORS = {
   "a-plus": ["#00602f", "#fff"],
@@ -372,8 +374,22 @@ function defineCard(LitElement) {
       return this.hass?.states?.[this._ids()[key]];
     }
 
+    /** List items in the shape the rows and the product sheet use. A product
+     * item carries the details of its product; free text has only a name. */
     _products() {
-      return this._stateOf("shopping_list")?.attributes?.products || [];
+      const items = this._stateOf("shopping_list")?.attributes?.items || [];
+      if (items !== this._itemsSource) {
+        this._itemsSource = items;
+        this._rows = items.map((i) => ({
+          ...i,
+          item_id: i.id,
+          product_name: i.name,
+          quantity: i.net_quantity,
+          shopping_list_quantity: i.quantity,
+          added_to_list_at: i.added_at,
+        }));
+      }
+      return this._rows;
     }
 
     _unknowns() {
@@ -457,12 +473,32 @@ function defineCard(LitElement) {
     /* ---------- Actions ---------- */
 
     async _submitInput(mode = this._config.scan_action) {
-      const ean = cleanEan(this._input);
+      const text = this._input.trim();
+      if (!text) return;
+      if (!isBarcodeText(text)) {
+        await this._addText(text);
+        return;
+      }
+      const ean = cleanEan(text);
       if (ean.length < 8) {
         this._toast("Enter a barcode with 8 to 14 digits");
         return;
       }
       await this._handleBarcode(ean, mode);
+    }
+
+    async _addText(name) {
+      this._busy = true;
+      try {
+        const res = await this._call("add_to_shopping_list", { name }, { response: true });
+        if (!res) return;
+        this._input = "";
+        this._result = { status: "added", name: res.name };
+        this._haptic("success");
+        this._tab = "list";
+      } finally {
+        this._busy = false;
+      }
     }
 
     async _handleBarcode(ean, mode) {
@@ -507,7 +543,7 @@ function defineCard(LitElement) {
         return false;
       }
       const ok = await this._withPending(ean, () =>
-        this._call("add_mapping", { ean, name: clean, add_to_shopping_list: addToList })
+        this._call("name_product", { ean, name: clean, add_to_shopping_list: addToList })
       );
       if (ok) {
         const names = { ...this._names };
@@ -520,29 +556,29 @@ function defineCard(LitElement) {
     }
 
     async _dismissUnknown(ean) {
-      await this._withPending(ean, () => this._call("remove_mapping", { ean }));
+      await this._withPending(ean, () => this._call("remove_product", { ean }));
     }
 
-    async _setQuantity(product, delta) {
-      const next = Math.max(1, qtyNumber(product.shopping_list_quantity) + delta);
-      await this._withPending(product.ean, () =>
-        this._call("update_shopping_list_quantity", { ean: product.ean, quantity: String(next) })
+    async _setQuantity(item, delta) {
+      const next = Math.max(1, qtyNumber(item.shopping_list_quantity) + delta);
+      await this._withPending(item.item_id, () =>
+        this._call("update_shopping_list_item", { item: item.item_id, quantity: String(next) })
       );
     }
 
-    async _markBought(product) {
+    async _markBought(item) {
       this._haptic("light");
-      const ok = await this._withPending(product.ean, () =>
-        this._call("remove_from_shopping_list", { ean: product.ean })
+      const ok = await this._withPending(item.item_id, () =>
+        this._call("remove_from_shopping_list", { item: item.item_id })
       );
       if (!ok) return;
-      const quantity = product.shopping_list_quantity;
-      this._toast(`${product.product_name} removed`, {
+      const quantity = item.shopping_list_quantity ? { quantity: item.shopping_list_quantity } : {};
+      this._toast(`${item.product_name} removed`, {
         text: "Undo",
-        action: () =>
-          this._call("add_scanned_to_shopping_list", {
-            ean: product.ean,
-            ...(quantity ? { quantity } : {}),
+        action: () => item.ean
+          ? this._call("add_scanned_to_shopping_list", { ean: item.ean, ...quantity })
+          : this._call("add_to_shopping_list", {
+            name: item.product_name, ...quantity, ...(item.note ? { note: item.note } : {}),
           }),
       });
     }
@@ -654,7 +690,7 @@ function defineCard(LitElement) {
       const d = this._details;
       if (!d) return null;
       const listed = this._products().find((p) => p.ean === d.product.ean);
-      return { ...d.product, ...(d.full || {}), ...(listed ? { shopping_list_quantity: listed.shopping_list_quantity, in_shopping_list: true } : {}) };
+      return { ...d.product, ...(d.full || {}), ...(listed ? { shopping_list_quantity: listed.shopping_list_quantity, item_id: listed.item_id, in_shopping_list: true } : {}) };
     }
 
     /* ---------- Scanner ---------- */
@@ -768,7 +804,7 @@ function defineCard(LitElement) {
     _visibleProducts() {
       let list = [...this._products()];
       const q = this._query.trim().toLowerCase();
-      if (q) list = list.filter((p) => `${p.product_name} ${p.brands || ""} ${p.ean}`.toLowerCase().includes(q));
+      if (q) list = list.filter((p) => `${p.product_name} ${p.brands || ""} ${p.note || ""} ${p.ean || ""}`.toLowerCase().includes(q));
       const grade = (g) => String(g || "").toLowerCase();
       if (this._filter === "vegan") list = list.filter((p) => p.ingredients_analysis_vegan === "yes");
       if (this._filter === "vegetarian") list = list.filter((p) => p.ingredients_analysis_vegetarian === "yes");
@@ -868,21 +904,22 @@ function defineCard(LitElement) {
 
     _renderInput() {
       const showScanner = this._config.show_scanner && this._scannerSupported;
-      const valid = cleanEan(this._input).length >= 8;
-      const lookupOnly = this._config.scan_action === "lookup";
+      const text = this._input.trim();
+      const barcode = isBarcodeText(text);
+      const valid = barcode ? cleanEan(text).length >= 8 : Boolean(text);
+      const lookupOnly = barcode && this._config.scan_action === "lookup";
       return html`
         <div class="input-row">
           <div class="search-field ${this._busy ? "busy" : ""}">
-            <ha-icon class="field-icon" icon="mdi:barcode"></ha-icon>
+            <ha-icon class="field-icon" icon=${text && !barcode ? "mdi:format-list-bulleted" : "mdi:barcode"}></ha-icon>
             <input
               type="text"
-              inputmode="numeric"
               autocomplete="off"
               enterkeyhint="go"
-              aria-label="Barcode"
-              placeholder=${showScanner ? "Scan or type a barcode" : "Type a barcode"}
+              aria-label="Barcode or item"
+              placeholder=${showScanner ? "Scan, or type a barcode or item" : "Type a barcode or item"}
               .value=${this._input}
-              @input=${(e) => (this._input = cleanEan(e.target.value))}
+              @input=${(e) => (this._input = e.target.value.slice(0, 100))}
               @keydown=${(e) => e.key === "Enter" && this._submitInput()}
             />
             ${this._input
@@ -1023,13 +1060,14 @@ function defineCard(LitElement) {
     }
 
     _renderRow(p) {
-      const pending = this._pending.has(p.ean);
+      const pending = this._pending.has(p.item_id);
       const qty = qtyNumber(p.shopping_list_quantity);
       const qtyText = p.shopping_list_quantity && !/^\d+$/.test(p.shopping_list_quantity) ? p.shopping_list_quantity : null;
       const img = p.image_small_url || p.image_url;
       const brandShown = p.brands && !p.product_name.toLowerCase().includes(String(p.brands).split(",")[0].toLowerCase());
       const days = daysUntil(p.expiry_date);
-      const meta = [brandShown ? p.brands : null, typeof p.current_price === "number" ? this._money(p.current_price, p.price_currency) : null].filter(Boolean);
+      const meta = [brandShown ? p.brands : null, typeof p.current_price === "number" ? this._money(p.current_price, p.price_currency) : null, p.note].filter(Boolean);
+      const open = p.ean ? () => this._openDetails(p) : null;
 
       return html`
         <div class="row-wrap">
@@ -1039,10 +1077,10 @@ function defineCard(LitElement) {
             @touchmove=${this._touchMove}
             @touchend=${this._touchEnd}
             @touchcancel=${this._touchEnd}>
-            <button class="thumb" aria-label="Details for ${p.product_name}" @click=${() => this._openDetails(p)}>
-              ${img ? html`<img src=${img} alt="" loading="lazy" />` : html`<ha-icon icon="mdi:package-variant-closed"></ha-icon>`}
+            <button class="thumb" aria-label="Details for ${p.product_name}" ?disabled=${!open} @click=${open}>
+              ${img ? html`<img src=${img} alt="" loading="lazy" />` : html`<ha-icon icon=${p.ean ? "mdi:package-variant-closed" : "mdi:format-list-bulleted"}></ha-icon>`}
             </button>
-            <button class="row-main" @click=${() => this._openDetails(p)}>
+            <button class="row-main" ?disabled=${!open} @click=${open}>
               <span class="row-title">${p.product_name}</span>
               ${meta.length ? html`<span class="row-meta">${meta.join(" \u00b7 ")}</span>` : nothing}
               <span class="row-tags">
@@ -1146,7 +1184,7 @@ function defineCard(LitElement) {
       const a = stats.attributes || {};
       const items = [
         ["accent", "Scans", stats.state, "Barcodes scanned"],
-        ["violet", "Products", a.total_mappings, "Products you have named or looked up"],
+        ["violet", "Products", a.total_products, "Products you have named or looked up"],
         ["cyan", "Online", a.openfoodfacts_hits, "Products found in OpenFoodFacts"],
         ["green", "Local", a.local_hits, "Scans answered from your own product list"],
       ];
@@ -1159,7 +1197,8 @@ function defineCard(LitElement) {
     }
 
     _renderMenu(count) {
-      const valid = cleanEan(this._input).length >= 8;
+      const text = this._input.trim();
+      const valid = isBarcodeText(text) && cleanEan(text).length >= 8;
       return html`<div class="scrim" @click=${() => { this._menuOpen = false; this._confirmClear = false; }}>
         <div class="sheet" role="dialog" aria-label="Actions" @click=${(e) => e.stopPropagation()}>
           <div class="handle"></div>
@@ -1265,7 +1304,7 @@ function defineCard(LitElement) {
 
     _renderHeroActions(p) {
       const listed = p.in_shopping_list;
-      const pending = this._pending.has(p.ean);
+      const pending = this._pending.has(p.ean) || this._pending.has(p.item_id);
       return html`<div class="hero-actions">
         ${listed
           ? html`<button class="tonal-button" ?disabled=${pending}
@@ -1536,6 +1575,7 @@ function defineCard(LitElement) {
         /* Base */
         button { font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
         button:disabled { cursor: default; opacity: 0.45; }
+        .thumb:disabled, .row-main:disabled { opacity: 1; }
         button:focus-visible, input:focus-visible, textarea:focus-visible, a:focus-visible {
           outline: 2px solid var(--sa-accent); outline-offset: 2px;
         }

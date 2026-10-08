@@ -1,13 +1,11 @@
-# Contributing to Shopping Assistant
-
-Bug reports and pull requests are welcome. For larger changes, open an issue first so we can agree on the approach.
+# Contributing
 
 ## Development setup
 
 Requires Python 3.13.
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ha-shopping-assistant.git
+git clone https://github.com/swetoast/ha-shopping-assistant.git
 cd ha-shopping-assistant
 python3.13 -m venv .venv
 . .venv/bin/activate
@@ -29,17 +27,18 @@ pytest
 
 CI also runs hassfest and the HACS validator.
 
-The tests in `tests/` cover barcode parsing, OpenFoodFacts parsing, storage migration, the scan flow, services, the webhook and the config flow. OpenFoodFacts is mocked; never call the real API from tests.
+OpenFoodFacts is mocked in the tests. Never call the real API from tests.
 
 ## Code layout
 
 | File | Purpose |
 | --- | --- |
-| `__init__.py` | Entry setup, share event listener, entry migration |
+| `__init__.py` | Entry setup and the share event listener |
 | `runtime.py` | Runtime object: settings, lookup, scan handling, notifications, contributions |
 | `api.py` | OpenFoodFacts API v3.6 client (aiohttp), rate limiters, response parsing, submission payload |
-| `product_database.py` | Product model, storage and storage migration |
-| `shopping.py` | To-do list sync |
+| `storage.py` | Storage format, record base class and migrations |
+| `product_database.py` | Products, unknown barcodes, statistics, backup, restore and reset |
+| `shopping.py` | The shopping list |
 | `services.py` | Service actions and their schemas |
 | `scanner_webhook.py` | Webhook handler |
 | `ean.py` | Barcode validation and normalization |
@@ -56,16 +55,17 @@ The tests in `tests/` cover barcode parsing, OpenFoodFacts parsing, storage migr
 - Send `app_name`, `app_version` and `app_uuid` with write requests.
 - Test contributions against the test server (`off_test_mode`).
 
+## Storage
+
+All data is one document in `.storage/shopping_assistant`. `storage.py` describes it.
+
+- New fields need no migration. Add the field with a default to `ProductData`, `UnknownProduct` or `ListItem`. Stored data without it gets the default, and fields an older version does not know are kept.
+- A new kind of data gets its own top-level section. Add it to `SECTIONS` in `product_database.py` and to `_apply` and `_data_to_save`.
+- Renaming, moving or reshaping stored data needs a step in `MIGRATIONS` in `storage.py`, keyed by the version it upgrades from, and a bump of `STORAGE_MINOR_VERSION` in `const.py`. Bump `STORAGE_VERSION` only when older versions can no longer read the data.
+- A new `ListItem` field shows up in the sensor and in `get_shopping_list` by itself. Add it to `UPDATABLE_FIELDS` and the `update_shopping_list_item` schema to make it editable.
+
 ## Style
 
 - Plain ASCII in source files.
 - Type hints and docstrings on public functions and classes.
 - User-facing strings for config, entities and services live in `translations/en.json`.
-
-## Commit messages
-
-Use conventional commits, for example `fix(webhook): return JSON responses` or `feat(services): add force_refresh to lookup_product`.
-
-## License
-
-Contributions are licensed under the MIT License.

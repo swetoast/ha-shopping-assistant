@@ -36,7 +36,6 @@ async def async_get_config_entry_diagnostics(
     return {
         "data": async_redact_data(dict(entry.data), TO_REDACT),
         "options": async_redact_data(dict(entry.options), TO_REDACT),
-        "shopping_list_entity_available": assistant.shopping.available,
         "api_health": asdict(assistant.health),
         "statistics": dict(db.statistics),
         "products": len(db.products),
@@ -46,5 +45,5 @@ async def async_get_config_entry_diagnostics(
             for source in sorted({p.source for p in db.products.values()})
         },
         "unknowns": len(db.unknowns),
-        "shopping_list_items": len(db.shopping_list()),
+        "shopping_list_items": len(db.shopping.items),
     }

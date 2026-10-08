@@ -1,4 +1,4 @@
-"""Runtime object tying settings, storage, OpenFoodFacts and the to-do list together."""
+"""Runtime object tying settings, storage and OpenFoodFacts together."""
 from __future__ import annotations
 
 import asyncio
@@ -35,7 +35,6 @@ from .const import (
     CONF_OFF_PASSWORD,
     CONF_OFF_TEST_MODE,
     CONF_OFF_USERNAME,
-    CONF_SHOPPING_LIST_ENTITY,
     CONF_SHOW_NOTIFICATIONS,
     CONF_TRACK_EXPIRY,
     CONF_TRACK_PRICES,
@@ -51,7 +50,7 @@ from .const import (
     SIGNAL_UPDATE,
 )
 from .product_database import SOURCE_MANUAL, SOURCE_OFF, ProductData, ProductDatabase
-from .shopping import ShoppingList
+from .shopping import ListItem, ShoppingList, describe_item
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -85,7 +84,6 @@ class Settings:
     contact_email: str
     languages: tuple[str, ...]
     auto_add: bool
-    shopping_list_entity: str
     show_notifications: bool
     track_prices: bool
     track_expiry: bool
@@ -104,7 +102,6 @@ class Settings:
             contact_email=str(opts[CONF_CONTACT_EMAIL]).strip(),
             languages=tuple(parse_languages(opts[CONF_LANGUAGE_PRIORITY])),
             auto_add=bool(opts[CONF_AUTO_ADD_TO_SHOPPING_LIST]),
-            shopping_list_entity=str(opts[CONF_SHOPPING_LIST_ENTITY]),
             show_notifications=bool(opts[CONF_SHOW_NOTIFICATIONS]),
             track_prices=bool(opts[CONF_TRACK_PRICES]),
             track_expiry=bool(opts[CONF_TRACK_EXPIRY]),
@@ -153,11 +150,19 @@ class ShoppingAssistant:
     settings: Settings
     db: ProductDatabase
     client: OpenFoodFactsClient
-    shopping: ShoppingList
     health: ApiHealth = field(default_factory=ApiHealth)
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
     _recent_scans: dict[str, float] = field(default_factory=dict)
     _refreshing: set[str] = field(default_factory=set)
+
+    @property
+    def shopping(self) -> ShoppingList:
+        """Return the shopping list."""
+        return self.db.shopping
+
+    def describe(self, item: ListItem) -> dict[str, Any]:
+        """Return a list item with the details of its product."""
+        return describe_item(item, self.db.get(item.ean) if item.ean else None)
 
     @callback
     def _health_changed(self) -> None:
@@ -283,15 +288,9 @@ class ShoppingAssistant:
         if add_to_list is None:
             add_to_list = self.settings.auto_add
         if product and add_to_list:
-            try:
-                await self.shopping.async_add(product, quantity)
-            except HomeAssistantError as err:
-                if origin == "service":
-                    raise
-                _LOGGER.warning("Could not add %s to the shopping list: %s", name, err)
-            else:
-                result["added_to_shopping_list"] = True
-                self._notify(f"Added '{name}' to the shopping list", f"{DOMAIN}_added")
+            item = self.shopping.add(name, ean=ean, quantity=quantity)
+            result |= {"added_to_shopping_list": True, "item": item.to_dict()}
+            self._notify(f"Added '{name}' to the shopping list", f"{DOMAIN}_added")
         return result
 
     # Notifications ----------------------------------------------------------
@@ -312,7 +311,7 @@ class ShoppingAssistant:
             f"OpenFoodFacts has no product for barcode `{ean}`.\n\n"
             "Name the last scanned item:\n\n"
             "```yaml\n"
-            "action: shopping_assistant.add_last_missing_mapping\n"
+            "action: shopping_assistant.name_last_unknown\n"
             "data:\n"
             '  name: "Product name"\n'
             "```\n\n"

@@ -1,4 +1,4 @@
-"""Tests for barcode handling, OpenFoodFacts parsing and storage migration."""
+"""Tests for barcode handling, OpenFoodFacts parsing and the storage format."""
 from __future__ import annotations
 
 import pytest
@@ -9,10 +9,9 @@ from custom_components.shopping_assistant.api import (
     parse_product,
 )
 from custom_components.shopping_assistant.ean import extract_ean, gtin_checksum_valid, parse_ean
-from custom_components.shopping_assistant.product_database import (
-    ProductData,
-    migrate_storage,
-)
+from custom_components.shopping_assistant import storage
+from custom_components.shopping_assistant.product_database import ProductData
+from custom_components.shopping_assistant.shopping import ListItem
 
 from .conftest import KNOWN_EAN, KNOWN_PRODUCT
 
@@ -119,44 +118,25 @@ def test_build_submission() -> None:
     assert build_submission(product, language="sv", new_product=True) == {}
 
 
-def test_migrate_storage() -> None:
-    """Old layouts are converted without losing data."""
-    legacy = migrate_storage(
-        {
-            "mappings": {
-                "036000291452": {"name": "Milk", "updated_at": "2025-01-01T00:00:00+00:00"}
-            },
-            "price_history": {"036000291452": [{"price": 12.5, "currency": "SEK"}]},
-            "unknowns": {"96385074": {"ean": "96385074", "seen_count": 2, "status": "missing"}},
-        }
-    )
-    milk = legacy["products"]["0036000291452"]
-    assert milk["product_name"] == "Milk"
-    assert milk["current_price"] == 12.5
-    assert milk["edited_fields"] == ["product_name"]
-    assert legacy["unknowns"]["96385074"]["seen_count"] == 2
-
-    current = migrate_storage(
-        {
-            "products": {
-                KNOWN_EAN: {
-                    "product_name": "Nutella",
-                    "source": "openfoodfacts",
-                    "product_name_sv": "Nutella",
-                    "ingredients_analysis_palm_oil": "no",
-                    "ingredients_analysis_vegan": "yes",
-                    "favorite": True,
-                    "fat": 30.9,
-                    "carbon_footprint": 520,
-                    "a_future_field": 1,
-                }
-            }
-        }
-    )
-    product = ProductData.from_dict(current["products"][KNOWN_EAN])
+def test_records_keep_unknown_fields() -> None:
+    """Fields a newer version added survive loading and saving."""
+    raw = {"ean": KNOWN_EAN, "product_name": "Nutella", "fat": 30.9, "future_field": {"a": 1}}
+    product = ProductData.from_dict(raw)
     assert product.fat == 30.9
-    assert product.localized_names == {"sv": "Nutella"}
-    assert product.ingredients_analysis_vegan == "maybe"
-    assert product.carbon_footprint is None  # old unit, refetched on next scan
-    assert product.edited_fields == []
-    assert product.needs_refresh()
+    assert product.extra == {"future_field": {"a": 1}}
+    assert {k: v for k, v in product.to_dict().items() if k in raw} == raw
+
+    item = ListItem.from_dict({"name": "Bananas", "aisle": 4})
+    assert item.to_dict()["aisle"] == 4
+    assert ProductData.from_dict({"ean": KNOWN_EAN}).product_name == "Unknown Product"
+
+
+def test_migrations_run_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Steps from the stored version onwards run in version order."""
+    steps = {
+        (1, 2): lambda data: data | {"order": [*data["order"], "1.2"]},
+        (1, 1): lambda data: data | {"order": [*data["order"], "1.1"]},
+    }
+    monkeypatch.setattr(storage, "MIGRATIONS", steps)
+    assert storage.migrate({"order": []}, 1, 1)["order"] == ["1.1", "1.2"]
+    assert storage.migrate({"order": []}, 1, 2)["order"] == ["1.2"]

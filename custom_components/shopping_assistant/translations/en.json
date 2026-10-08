@@ -3,15 +3,13 @@
     "step": {
       "user": {
         "title": "Set up Shopping Assistant",
-        "description": "OpenFoodFacts asks every app to identify itself with a contact email. Settings from EAN Reader are filled in if it was set up before.",
+        "description": "OpenFoodFacts asks every app to identify itself with a contact email.",
         "data": {
           "contact_email": "Contact email",
-          "shopping_list_entity": "Shopping list",
           "auto_add_to_shopping_list": "Add scanned products to the shopping list"
         },
         "data_description": {
-          "contact_email": "Sent to OpenFoodFacts in the User-Agent so they can reach you about your usage.",
-          "shopping_list_entity": "To-do list that scanned products are added to."
+          "contact_email": "Sent to OpenFoodFacts in the User-Agent so they can reach you about your usage."
         }
       }
     },
@@ -30,7 +28,6 @@
         "data": {
           "contact_email": "Contact email",
           "language_priority": "Name languages",
-          "shopping_list_entity": "Shopping list",
           "auto_add_to_shopping_list": "Add scanned products to the shopping list",
           "show_notifications": "Show notifications",
           "track_prices": "Price tracking",
@@ -45,7 +42,6 @@
         "data_description": {
           "contact_email": "Sent to OpenFoodFacts in the User-Agent so they can reach you about your usage.",
           "language_priority": "Comma-separated two-letter codes, tried in order, for example sv, en.",
-          "shopping_list_entity": "To-do list that scanned products are added to.",
           "enable_webhook": "Lets external scanners send barcodes over HTTP.",
           "webhook_local_only": "Turn off to accept calls through Home Assistant Cloud or your external URL.",
           "enable_off_submission": "Needed for the submit and image upload actions.",
@@ -80,13 +76,15 @@
       }
     }
   },
-  "issues": {
-    "legacy_integration": {
-      "title": "Remove the old EAN Reader integration",
-      "description": "Shopping Assistant replaces EAN Reader and has imported its products. Delete the EAN Reader entry under Settings > Devices & services, then remove the custom_components/ean_reader folder and restart Home Assistant."
-    }
-  },
   "selector": {
+    "reset_sections": {
+      "options": {
+        "products": "Products",
+        "unknowns": "Unknown barcodes",
+        "shopping_list": "Shopping list",
+        "statistics": "Statistics"
+      }
+    },
     "image_field": {
       "options": {
         "front": "Front",
@@ -97,8 +95,8 @@
     }
   },
   "services": {
-    "add_mapping": {
-      "name": "Add mapping",
+    "name_product": {
+      "name": "Name product",
       "description": "Name a barcode in the local database. Existing product details are kept.",
       "fields": {
         "ean": {
@@ -115,7 +113,7 @@
         }
       }
     },
-    "add_last_missing_mapping": {
+    "name_last_unknown": {
       "name": "Name last unknown barcode",
       "description": "Name the most recently scanned barcode that OpenFoodFacts did not know.",
       "fields": {
@@ -129,8 +127,8 @@
         }
       }
     },
-    "remove_mapping": {
-      "name": "Remove mapping",
+    "remove_product": {
+      "name": "Remove product",
       "description": "Delete a barcode and its local data.",
       "fields": {
         "ean": {
@@ -171,21 +169,39 @@
       "name": "List unknown barcodes",
       "description": "Return all barcodes OpenFoodFacts did not know."
     },
-    "export_mappings": {
-      "name": "Export products",
-      "description": "Return all stored products as a backup."
+    "export_data": {
+      "name": "Export data",
+      "description": "Return everything stored as a backup."
     },
-    "import_mappings": {
-      "name": "Import products",
-      "description": "Import a backup created with Export products.",
+    "import_data": {
+      "name": "Import data",
+      "description": "Restore a backup made with Export data.",
       "fields": {
         "data": {
           "name": "Data",
-          "description": "Data returned by shopping_assistant.export_mappings."
+          "description": "Data returned by shopping_assistant.export_data."
         },
         "merge": {
           "name": "Merge",
-          "description": "Only add barcodes that are not stored yet. Turn off to replace all stored products."
+          "description": "Only add barcodes that are not stored yet. Turn off to replace all products and the shopping list."
+        }
+      }
+    },
+    "reset_database": {
+      "name": "Reset database",
+      "description": "Remove stored data. Choose what to remove, or only data older than a number of days.",
+      "fields": {
+        "confirm": {
+          "name": "Confirm",
+          "description": "Must be on, so data is not removed by accident."
+        },
+        "sections": {
+          "name": "What to remove",
+          "description": "Leave all selected to start over."
+        },
+        "older_than_days": {
+          "name": "Older than",
+          "description": "Only remove products not scanned or changed, unknown barcodes not seen and list items not added within this many days. Products on the shopping list are kept and statistics are left alone."
         }
       }
     },
@@ -225,37 +241,71 @@
         }
       }
     },
-    "remove_from_shopping_list": {
-      "name": "Remove from shopping list",
-      "description": "Remove a product from the shopping list.",
+    "add_to_shopping_list": {
+      "name": "Add to shopping list",
+      "description": "Add something without a barcode to the shopping list. If it is listed already, its count goes up.",
       "fields": {
-        "ean": {
-          "name": "Barcode",
-          "description": "EAN/UPC barcode (8 to 14 digits)."
-        }
-      }
-    },
-    "update_shopping_list_quantity": {
-      "name": "Set shopping list quantity",
-      "description": "Change how many of a listed product to buy.",
-      "fields": {
-        "ean": {
-          "name": "Barcode",
-          "description": "EAN/UPC barcode (8 to 14 digits)."
+        "name": {
+          "name": "Name",
+          "description": "What to buy."
         },
         "quantity": {
           "name": "Quantity",
           "description": "How many to buy, for example 2 or 500 g."
+        },
+        "note": {
+          "name": "Note",
+          "description": "A note for the list, for example a brand or where to find it."
+        }
+      }
+    },
+    "update_shopping_list_item": {
+      "name": "Edit shopping list item",
+      "description": "Change the name, quantity or note of a listed item. An empty value clears the quantity or note.",
+      "fields": {
+        "item": {
+          "name": "Item id",
+          "description": "Id of the list item, from get_shopping_list or the shopping list sensor."
+        },
+        "ean": {
+          "name": "Barcode",
+          "description": "Barcode of a listed product. Use this or the item id."
+        },
+        "name": {
+          "name": "Name",
+          "description": "What to buy."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many to buy, for example 2 or 500 g."
+        },
+        "note": {
+          "name": "Note",
+          "description": "A note for the list, for example a brand or where to find it."
+        }
+      }
+    },
+    "remove_from_shopping_list": {
+      "name": "Remove from shopping list",
+      "description": "Remove an item from the shopping list.",
+      "fields": {
+        "item": {
+          "name": "Item id",
+          "description": "Id of the list item, from get_shopping_list or the shopping list sensor."
+        },
+        "ean": {
+          "name": "Barcode",
+          "description": "Barcode of a listed product. Use this or the item id."
         }
       }
     },
     "clear_shopping_list": {
       "name": "Clear shopping list",
-      "description": "Remove every product added by Shopping Assistant from the shopping list."
+      "description": "Remove everything from the shopping list."
     },
     "get_shopping_list": {
       "name": "Get shopping list",
-      "description": "Return the products on the shopping list with their details."
+      "description": "Return the shopping list with the details of each product."
     },
     "update_product": {
       "name": "Edit product",

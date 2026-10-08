@@ -5,7 +5,7 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import Event, HomeAssistant, callback
-from homeassistant.helpers import config_validation as cv, issue_registry as ir
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import async_get_integration
 
@@ -13,7 +13,6 @@ from .api import OpenFoodFactsClient
 from .const import (
     DATA_APP_UUID,
     DOMAIN,
-    LEGACY_DOMAIN,
     PLATFORMS,
     SHARE_EVENT,
 )
@@ -23,7 +22,6 @@ from .product_database import ProductDatabase
 from .runtime import Settings, ShoppingAssistant
 from .scanner_webhook import async_setup_webhook
 from .services import async_setup_services
-from .shopping import ShoppingList
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,8 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShoppingAssistantConfigE
     integration = await async_get_integration(hass, DOMAIN)
 
     db = ProductDatabase(hass)
-    if await db.async_load():
-        _LOGGER.info("Imported %d products from EAN Reader", len(db.products))
+    await db.async_load()
 
     client = OpenFoodFactsClient(
         hass,
@@ -60,13 +57,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShoppingAssistantConfigE
         settings=settings,
         db=db,
         client=client,
-        shopping=ShoppingList(hass, db, settings.shopping_list_entity),
     )
     entry.runtime_data = assistant
-
-    _async_update_issue(
-        hass, "legacy_integration", bool(hass.config_entries.async_entries(LEGACY_DOMAIN))
-    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
@@ -81,26 +73,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ShoppingAssistantConfigE
         )
 
     entry.async_on_unload(hass.bus.async_listen(SHARE_EVENT, _handle_share))
-    entry.async_on_unload(assistant.shopping.async_start())
     if settings.enable_webhook:
         async_setup_webhook(hass, entry)
     return True
-
-
-@callback
-def _async_update_issue(hass: HomeAssistant, issue_id: str, active: bool) -> None:
-    """Create or clear a repair issue."""
-    if active:
-        ir.async_create_issue(
-            hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.WARNING,
-            translation_key=issue_id,
-        )
-    else:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ShoppingAssistantConfigEntry) -> bool:

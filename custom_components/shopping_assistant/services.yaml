@@ -1,4 +1,4 @@
-add_mapping:
+name_product:
   fields:
     ean:
       required: true
@@ -15,7 +15,7 @@ add_mapping:
       selector:
         boolean:
 
-add_last_missing_mapping:
+name_last_unknown:
   fields:
     name:
       required: true
@@ -27,7 +27,7 @@ add_last_missing_mapping:
       selector:
         boolean:
 
-remove_mapping:
+remove_product:
   fields:
     ean:
       required: true
@@ -61,9 +61,9 @@ add_scanned_to_shopping_list:
 
 list_unknowns:
 
-export_mappings:
+export_data:
 
-import_mappings:
+import_data:
   fields:
     data:
       required: true
@@ -73,6 +73,37 @@ import_mappings:
       default: true
       selector:
         boolean:
+
+reset_database:
+  fields:
+    confirm:
+      required: true
+      default: false
+      selector:
+        boolean:
+    sections:
+      default:
+        - products
+        - unknowns
+        - shopping_list
+        - statistics
+      selector:
+        select:
+          multiple: true
+          translation_key: reset_sections
+          options:
+            - products
+            - unknowns
+            - shopping_list
+            - statistics
+    older_than_days:
+      example: 365
+      selector:
+        number:
+          min: 1
+          max: 3650
+          unit_of_measurement: days
+          mode: box
 
 add_price:
   fields:
@@ -111,24 +142,51 @@ set_expiry:
       selector:
         date:
 
-remove_from_shopping_list:
+add_to_shopping_list:
   fields:
-    ean:
+    name:
       required: true
-      example: "7318690101234"
-      selector:
-        text:
-
-update_shopping_list_quantity:
-  fields:
-    ean:
-      required: true
-      example: "7318690101234"
+      example: "Bananas"
       selector:
         text:
     quantity:
-      required: true
+      example: "6"
+      selector:
+        text:
+    note:
+      example: "Ripe ones"
+      selector:
+        text:
+
+update_shopping_list_item:
+  fields:
+    item:
+      example: "3f2a9c0e5b7d4e1f8a6b2c4d9e0f1a3b"
+      selector:
+        text:
+    ean:
+      example: "7318690101234"
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    quantity:
       example: "2"
+      selector:
+        text:
+    note:
+      selector:
+        text:
+
+remove_from_shopping_list:
+  fields:
+    item:
+      example: "3f2a9c0e5b7d4e1f8a6b2c4d9e0f1a3b"
+      selector:
+        text:
+    ean:
+      example: "7318690101234"
       selector:
         text:
 

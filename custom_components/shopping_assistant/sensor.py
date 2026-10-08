@@ -21,42 +21,6 @@ if TYPE_CHECKING:
 
 EXPIRING_SUFFIX = "expiring_soon"
 
-# Product attributes exposed per shopping list item.
-SHOPPING_LIST_ATTRIBUTES: tuple[str, ...] = (
-    "ean",
-    "product_name",
-    "brands",
-    "quantity",
-    "shopping_list_quantity",
-    "added_to_list_at",
-    "image_url",
-    "image_small_url",
-    "nutrition_grades",
-    "eco_score_grade",
-    "nova_group",
-    "ingredients_analysis_vegan",
-    "ingredients_analysis_vegetarian",
-    "ingredients_analysis_palm_oil_free",
-    "nutrition_per",
-    "nutrition_preparation",
-    "energy_kcal",
-    "fat",
-    "carbohydrates",
-    "proteins",
-    "serving_size",
-    "calcium",
-    "iron",
-    "vitamin_c",
-    "packaging",
-    "carbon_footprint",
-    "alcohol",
-    "caffeine",
-    "current_price",
-    "price_currency",
-    "expiry_date",
-)
-
-
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ShoppingAssistantConfigEntry,
@@ -99,7 +63,7 @@ class StatisticsSensor(ShoppingAssistantEntity, SensorEntity):
         db = self._assistant.db
         stats = db.statistics
         return {
-            "total_mappings": sum(1 for p in db.products.values() if p.is_named),
+            "total_products": sum(1 for p in db.products.values() if p.is_named),
             "unknown_products": len(db.unknowns),
             "total_scans": stats["total_scans"],
             "openfoodfacts_hits": stats["openfoodfacts_hits"],
@@ -138,9 +102,9 @@ class UnknownProductsSensor(ShoppingAssistantEntity, SensorEntity):
 
 
 class ShoppingListSensor(ShoppingAssistantEntity, SensorEntity):
-    """Products currently on the shopping list."""
+    """Items on the shopping list."""
 
-    _unrecorded_attributes = frozenset({"products"})
+    _unrecorded_attributes = frozenset({"items"})
 
     def __init__(self, assistant: ShoppingAssistant) -> None:
         """Initialize."""
@@ -148,17 +112,15 @@ class ShoppingListSensor(ShoppingAssistantEntity, SensorEntity):
 
     @property
     def native_value(self) -> int:
-        """Return the number of listed products."""
-        return len(self._assistant.db.shopping_list())
+        """Return the number of items."""
+        return len(self._assistant.shopping.items)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return the listed products."""
-        products = [
-            {key: getattr(p, key) for key in SHOPPING_LIST_ATTRIBUTES}
-            for p in self._assistant.db.shopping_list()
-        ]
-        return {"products": products, "count": len(products)}
+        """Return the items with the details of their products."""
+        assistant = self._assistant
+        items = [assistant.describe(item) for item in assistant.shopping.items.values()]
+        return {"items": items, "count": len(items)}
 
 
 class ExpiringSoonSensor(ShoppingAssistantEntity, SensorEntity):

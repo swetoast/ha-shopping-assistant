@@ -36,7 +36,7 @@ CREDENTIALS = Credentials("toast", "secret")
 def _client(hass: HomeAssistant, test_mode: bool = False) -> OpenFoodFactsClient:
     return OpenFoodFactsClient(
         hass,
-        app_version="1.2.0",
+        app_version="1.0.0",
         contact_email="toast@example.org",
         app_uuid="abc",
         test_mode=test_mode,
@@ -63,7 +63,7 @@ async def test_read_product(hass: HomeAssistant, aioclient_mock: AiohttpClientMo
     fields = url.query["fields"].split(",")
     assert {"nutrition", "product_name_sv", "categories_tags_sv"} <= set(fields)
     assert "fields=code,product_name," in url.raw_query_string
-    assert headers["User-Agent"] == "HomeAssistant-ShoppingAssistant/1.2.0 (toast@example.org)"
+    assert headers["User-Agent"] == "HomeAssistant-ShoppingAssistant/1.0.0 (toast@example.org)"
 
 
 async def test_read_errors(hass: HomeAssistant, aioclient_mock: AiohttpClientMocker) -> None:
@@ -113,7 +113,6 @@ async def test_write_product(hass: HomeAssistant, aioclient_mock: AiohttpClientM
 
 async def test_submit_service(
     hass: HomeAssistant,
-    shopping_list: None,
     off_lookup: AsyncMock,
     aioclient_mock: AiohttpClientMocker,
 ) -> None:

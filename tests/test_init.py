@@ -6,27 +6,23 @@ from http import HTTPStatus
 from pathlib import Path
 from unittest.mock import AsyncMock
 
+import pytest
+
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
-    async_fire_time_changed,
 )
 
-from homeassistant.config_entries import SOURCE_USER, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import issue_registry as ir
-from homeassistant.util import dt as dt_util
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.shopping_assistant.api import OFFRateLimitError
 from custom_components.shopping_assistant.const import (
     CONF_AUTO_ADD_TO_SHOPPING_LIST,
     CONF_ENABLE_WEBHOOK,
-    CONF_LANGUAGE_PRIORITY,
     DATA_WEBHOOK_ID,
     DOMAIN,
     EVENT_PRODUCT_SCANNED,
-    LEGACY_DOMAIN,
-    LEGACY_STORAGE_KEY,
     SHARE_EVENT,
     STORAGE_KEY,
 )
@@ -36,16 +32,18 @@ from .conftest import KNOWN_EAN, UNKNOWN_EAN, make_entry
 NUTELLA = "Ferrero - Nutella hasselnotskram (400 g)"
 
 
-async def _todo_items(hass: HomeAssistant) -> list[str]:
+async def _list(hass: HomeAssistant) -> list[dict]:
     result = await hass.services.async_call(
-        "todo",
-        "get_items",
-        {"status": ["needs_action"]},
-        target={"entity_id": "todo.shopping_list"},
-        blocking=True,
-        return_response=True,
+        DOMAIN, "get_shopping_list", {}, blocking=True, return_response=True
     )
-    return [item["summary"] for item in result["todo.shopping_list"]["items"]]
+    return result["items"]
+
+
+async def _call(hass: HomeAssistant, service: str, data: dict) -> dict | None:
+    response = service not in ("remove_from_shopping_list", "name_product")
+    return await hass.services.async_call(
+        DOMAIN, service, data, blocking=True, return_response=response
+    )
 
 
 async def _share(hass: HomeAssistant, text: str) -> None:
@@ -53,10 +51,10 @@ async def _share(hass: HomeAssistant, text: str) -> None:
     await hass.async_block_till_done()
 
 
-async def test_scan_adds_to_todo_and_syncs_back(
+async def test_scan_adds_to_own_list(
     hass: HomeAssistant, loaded_entry: MockConfigEntry, off_lookup: AsyncMock
 ) -> None:
-    """A shared barcode is looked up once, listed once and unflagged when completed."""
+    """A shared barcode is looked up once and listed once, without any to-do list."""
     scanned = async_capture_events(hass, EVENT_PRODUCT_SCANNED)
 
     await _share(hass, KNOWN_EAN)
@@ -64,39 +62,96 @@ async def test_scan_adds_to_todo_and_syncs_back(
 
     assert off_lookup.call_count == 1
     assert [e.data["source"] for e in scanned] == ["openfoodfacts"]
-    assert await _todo_items(hass) == [NUTELLA]
+    [item] = await _list(hass)
+    assert item["name"] == NUTELLA
+    assert item["ean"] == KNOWN_EAN
+    assert item["net_quantity"] == "400 g"
+    assert item["nutrition_grades"] == "e"
+    assert "quantity" not in item
     assert hass.states.get("sensor.shopping_assistant_shopping_list").state == "1"
-    assert hass.states.get("sensor.shopping_assistant_statistics").state == "1"
+    assert "todo" not in hass.config.components
 
-    # An explicit service scan is a local hit and does not duplicate the item.
-    response = await hass.services.async_call(
-        DOMAIN,
-        "add_scanned_to_shopping_list",
-        {"ean": KNOWN_EAN, "quantity": "2"},
-        blocking=True,
-        return_response=True,
-    )
+    # Scanning again raises the count; an explicit quantity replaces it.
+    response = await _call(hass, "add_scanned_to_shopping_list", {"ean": KNOWN_EAN})
     assert response["source"] == "local"
-    assert await _todo_items(hass) == [NUTELLA]
+    assert response["item"]["quantity"] == "2"
+    await _call(hass, "add_scanned_to_shopping_list", {"ean": KNOWN_EAN, "quantity": "500 g"})
+    assert [i["quantity"] for i in await _list(hass)] == ["500 g"]
     assert off_lookup.call_count == 1
 
-    # Completing the to-do item clears the product's shopping list flag.
-    await hass.services.async_call(
-        "todo",
-        "update_item",
-        {"item": NUTELLA, "status": "completed"},
-        target={"entity_id": "todo.shopping_list"},
-        blocking=True,
-    )
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5))
-    await hass.async_block_till_done()
-    assert hass.states.get("sensor.shopping_assistant_shopping_list").state == "0"
     attrs = hass.states.get("sensor.shopping_assistant_statistics").attributes
-    assert attrs["total_scans"] == 2
-    assert attrs["local_hits"] == 1
+    assert attrs["total_scans"] == 3
+    assert attrs["local_hits"] == 2
+
+    await _call(hass, "remove_from_shopping_list", {"ean": KNOWN_EAN})
+    assert await _list(hass) == []
 
 
-async def test_unknown_then_mapping_keeps_data(
+async def test_free_text_items(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, hass_storage
+) -> None:
+    """Things without a barcode can be listed, edited and removed, and are stored."""
+    item = await _call(hass, "add_to_shopping_list", {"name": "Bananas", "note": "Ripe"})
+    assert item["name"] == "Bananas"
+    again = await _call(hass, "add_to_shopping_list", {"name": "bananas"})
+    assert again["id"] == item["id"]
+    assert again["quantity"] == "2"
+
+    edited = await _call(
+        hass, "update_shopping_list_item", {"item": item["id"], "quantity": "6", "note": ""}
+    )
+    assert edited["quantity"] == "6"
+    assert "note" not in edited
+    state = hass.states.get("sensor.shopping_assistant_shopping_list")
+    assert state.state == "1"
+    assert state.attributes["items"][0]["quantity"] == "6"
+
+    await hass.config_entries.async_unload(loaded_entry.entry_id)
+    assert hass_storage[STORAGE_KEY]["data"]["shopping_list"][0]["name"] == "Bananas"
+    assert await hass.config_entries.async_setup(loaded_entry.entry_id)
+    await hass.async_block_till_done()
+    assert [i["id"] for i in await _list(hass)] == [item["id"]]
+
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, "remove_from_shopping_list", {"item": "missing"})
+    assert await _call(hass, "clear_shopping_list", {}) == {"removed": 1}
+    assert await _list(hass) == []
+
+
+async def test_reset_database(
+    hass: HomeAssistant, loaded_entry: MockConfigEntry, freezer
+) -> None:
+    """Reset removes old data only when asked, and everything when asked to."""
+    await _share(hass, KNOWN_EAN)  # on the list
+    await _share(hass, UNKNOWN_EAN)
+    await _call(hass, "name_product", {"ean": "036000291452", "name": "Tea"})
+    freezer.tick(timedelta(days=40))
+    await _call(hass, "add_to_shopping_list", {"name": "Bananas"})
+
+    with pytest.raises(ServiceValidationError):
+        await _call(hass, "reset_database", {"confirm": False})
+
+    removed = await _call(
+        hass,
+        "reset_database",
+        {"confirm": True, "sections": ["products", "unknowns"], "older_than_days": 30},
+    )
+    assert removed == {"products": 1, "unknowns": 1}
+    db = loaded_entry.runtime_data.db
+    assert set(db.products) == {KNOWN_EAN}  # kept: still on the list
+
+    removed = await _call(hass, "reset_database", {"confirm": True, "older_than_days": 30})
+    assert removed == {"shopping_list": 1, "products": 1, "unknowns": 0}
+    assert [i["name"] for i in await _list(hass)] == ["Bananas"]
+    assert db.statistics["total_scans"] == 2
+
+    removed = await _call(hass, "reset_database", {"confirm": True})
+    assert removed == {"shopping_list": 1, "products": 0, "unknowns": 0, "statistics": True}
+    assert not db.products and not db.shopping.items
+    assert hass.states.get("sensor.shopping_assistant_statistics").state == "0"
+
+
+async def test_unknown_then_naming_keeps_data(
     hass: HomeAssistant, loaded_entry: MockConfigEntry
 ) -> None:
     """Unknown barcodes are cached; naming them or a known product keeps its data."""
@@ -104,19 +159,19 @@ async def test_unknown_then_mapping_keeps_data(
     assert hass.states.get("sensor.shopping_assistant_unknown_products").state == "1"
 
     await hass.services.async_call(
-        DOMAIN, "add_last_missing_mapping", {"name": "Store milk"}, blocking=True
+        DOMAIN, "name_last_unknown", {"name": "Store milk"}, blocking=True
     )
     assert hass.states.get("sensor.shopping_assistant_unknown_products").state == "0"
-    assert "Store milk" in await _todo_items(hass)
+    assert [i["name"] for i in await _list(hass)] == ["Store milk"]
 
     await _share(hass, KNOWN_EAN)
     await hass.services.async_call(
-        DOMAIN, "add_mapping", {"ean": KNOWN_EAN, "name": "My Nutella"}, blocking=True
+        DOMAIN, "name_product", {"ean": KNOWN_EAN, "name": "My Nutella"}, blocking=True
     )
     product = loaded_entry.runtime_data.db.get(KNOWN_EAN)
     assert product.product_name == "My Nutella"
     assert product.fat == 30.9
-    assert product.in_shopping_list
+    assert loaded_entry.runtime_data.shopping.find(ean=KNOWN_EAN)
     assert product.source == "openfoodfacts+manual"
 
 
@@ -141,17 +196,17 @@ async def test_api_problem_and_service_responses(
     assert hass.states.get("binary_sensor.shopping_assistant_api_problem").state == "off"
 
     await hass.services.async_call(
-        DOMAIN, "add_mapping", {"ean": "036000291452", "name": "Tea"}, blocking=True
+        DOMAIN, "name_product", {"ean": "036000291452", "name": "Tea"}, blocking=True
     )
     export = await hass.services.async_call(
-        DOMAIN, "export_mappings", {}, blocking=True, return_response=True
+        DOMAIN, "export_data", {}, blocking=True, return_response=True
     )
     assert set(export["products"]) == {"0036000291452"}
 
     result = await hass.services.async_call(
         DOMAIN,
-        "import_mappings",
-        {"data": {"mappings": {KNOWN_EAN: {"name": "Imported"}}}, "merge": False},
+        "import_data",
+        {"data": {"products": {KNOWN_EAN: {"product_name": "Imported"}}}, "merge": False},
         blocking=True,
         return_response=True,
     )
@@ -160,7 +215,7 @@ async def test_api_problem_and_service_responses(
 
 
 async def test_webhook_is_stable_and_returns_json(
-    hass: HomeAssistant, shopping_list: None, off_lookup: AsyncMock, hass_client_no_auth
+    hass: HomeAssistant, off_lookup: AsyncMock, hass_client_no_auth
 ) -> None:
     """The webhook keeps its id across reloads and answers with JSON."""
     entry = make_entry(**{CONF_ENABLE_WEBHOOK: True, CONF_AUTO_ADD_TO_SHOPPING_LIST: False})
@@ -185,56 +240,9 @@ async def test_webhook_is_stable_and_returns_json(
     assert resp.status == HTTPStatus.BAD_REQUEST
 
 
-async def test_import_from_ean_reader(
-    hass: HomeAssistant, shopping_list: None, off_lookup: AsyncMock, hass_storage
-) -> None:
-    """EAN Reader options pre-fill setup and its products are imported once."""
-    hass_storage[LEGACY_STORAGE_KEY] = {
-        "version": 3,
-        "minor_version": 1,
-        "key": LEGACY_STORAGE_KEY,
-        "data": {"mappings": {KNOWN_EAN: {"name": "Old name"}}, "unknowns": {}},
-    }
-    MockConfigEntry(
-        domain=LEGACY_DOMAIN,
-        options={
-            "contact_email": "toast@example.org",
-            "show_images": True,
-            CONF_LANGUAGE_PRIORITY: "de, en",
-        },
-    ).add_to_hass(hass)
-
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
-    schema = result["data_schema"].schema
-    suggested = {
-        str(key): key.description["suggested_value"]
-        for key in schema
-        if key.description and "suggested_value" in key.description
-    }
-    assert suggested["contact_email"] == "toast@example.org"
-    result = await hass.config_entries.flow.async_configure(
-        result["flow_id"],
-        {
-            "contact_email": "toast@example.org",
-            "shopping_list_entity": "todo.shopping_list",
-            "auto_add_to_shopping_list": True,
-        },
-    )
-    await hass.async_block_till_done()
-    entry = hass.config_entries.async_entries(DOMAIN)[0]
-
-    assert entry.state is ConfigEntryState.LOADED
-    assert entry.options[CONF_LANGUAGE_PRIORITY] == ["de", "en"]
-    assert "show_images" not in entry.options
-    assert entry.runtime_data.db.get(KNOWN_EAN).product_name == "Old name"
-    assert hass_storage[STORAGE_KEY]["data"]["products"][KNOWN_EAN]["product_name"] == "Old name"
-    assert ir.async_get(hass).async_get_issue(DOMAIN, "legacy_integration")
-
-
 async def test_card_is_installed_and_loaded(
     hass: HomeAssistant,
     frontend_urls: set[str],
-    shopping_list: None,
     off_lookup: AsyncMock,
     hass_client_no_auth,
     config_dir: Path,
@@ -247,7 +255,7 @@ async def test_card_is_installed_and_loaded(
 
     installed = config_dir / "www" / "shopping-assistant" / "shopping-assistant-card.js"
     assert "shopping-assistant-card" in installed.read_text()
-    assert frontend_urls == {"/shopping_assistant/shopping-assistant-card.js?v=2.0.0"}
+    assert frontend_urls == {"/shopping_assistant/shopping-assistant-card.js?v=1.0.0"}
     client = await hass_client_no_auth()
     resp = await client.get("/shopping_assistant/shopping-assistant-card.js")
     assert resp.status == HTTPStatus.OK
@@ -257,7 +265,6 @@ async def test_card_is_installed_and_loaded(
 async def test_card_loads_from_www(
     hass: HomeAssistant,
     frontend_urls: set[str],
-    shopping_list: None,
     off_lookup: AsyncMock,
     config_dir: Path,
 ) -> None:
@@ -270,5 +277,5 @@ async def test_card_loads_from_www(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    assert frontend_urls == {"/local/shopping-assistant/shopping-assistant-card.js?v=2.0.0"}
+    assert frontend_urls == {"/local/shopping-assistant/shopping-assistant-card.js?v=1.0.0"}
     assert "shopping-assistant-card" in installed.read_text()

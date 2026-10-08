@@ -14,7 +14,6 @@ from custom_components.shopping_assistant.const import (
     CONF_CONTACT_EMAIL,
     CONF_ENABLE_OFF_SUBMISSION,
     CONF_LANGUAGE_PRIORITY,
-    CONF_SHOPPING_LIST_ENTITY,
     DATA_APP_UUID,
     DOMAIN,
     SHARE_EVENT,
@@ -23,12 +22,11 @@ from custom_components.shopping_assistant.const import (
 from .conftest import KNOWN_EAN
 
 
-async def test_user_flow(hass: HomeAssistant, shopping_list: None, off_lookup: AsyncMock) -> None:
+async def test_user_flow(hass: HomeAssistant, off_lookup: AsyncMock) -> None:
     """A real contact email is required and only one entry is allowed."""
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_USER})
     user_input = {
         CONF_CONTACT_EMAIL: "someone@example.com",
-        CONF_SHOPPING_LIST_ENTITY: "todo.shopping_list",
         CONF_AUTO_ADD_TO_SHOPPING_LIST: True,
     }
     result = await hass.config_entries.flow.async_configure(result["flow_id"], user_input)
